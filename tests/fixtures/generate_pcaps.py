@@ -236,7 +236,30 @@ def build_all_fixtures(output_dir: Path) -> dict[str, Path]:
     p_multi.write_bytes(multi_bytes)
     generated["multivalue"] = p_multi
 
-    # 6. ble_advertising.pcap (linktype 256, Nordic btle_rf)
+    # 6. truncated_capture.pcap
+    # A 2-packet capture whose last record is cut short mid-packet: the byte
+    # stream ends halfway through the second frame. Real sniffer captures get
+    # exactly this shape when the capture tool is killed (e.g. pkill). tshark
+    # dissects packet 1, reports "cut short in the middle of a packet", and
+    # exits 14 — usable output plus a warning, not a fatal read error.
+    p_trunc = output_dir / "truncated_capture.pcap"
+    trunc_bytes = bytearray(make_pcap_header())
+    q1 = make_dns_query("first.example.com", qtype=1, txid=0x1111)
+    trunc_bytes.extend(
+        make_pcap_packet(
+            make_ethernet_frame(make_udp_packet("192.168.1.20", "8.8.8.8", 53100, 53, q1)), sec=7000, usec=0
+        )
+    )
+    q2 = make_dns_query("second.example.com", qtype=1, txid=0x2222)
+    frame2 = make_ethernet_frame(make_udp_packet("192.168.1.20", "8.8.8.8", 53101, 53, q2))
+    # Write the record header claiming the full length, then only half the bytes.
+    trunc_bytes.extend(struct.pack("<IIII", 7000, 10000, len(frame2), len(frame2)))
+    trunc_bytes.extend(frame2[: len(frame2) // 2])
+
+    p_trunc.write_bytes(trunc_bytes)
+    generated["truncated"] = p_trunc
+
+    # 7. ble_advertising.pcap (linktype 256, Nordic btle_rf)
     # Three advertisers, one active scanner, and one SCAN_RSP. Device A and B share
     # the local name "TwinLight" (dual-address same-name detection path).
     p_ble_adv = output_dir / "ble_advertising.pcap"
@@ -273,7 +296,7 @@ def build_all_fixtures(output_dir: Path) -> dict[str, Path]:
     p_ble_adv.write_bytes(ble_adv_bytes)
     generated["ble_adv"] = p_ble_adv
 
-    # 7. ble_gatt_h4.pcap (linktype 201, HCI H4 with direction phdr)
+    # 8. ble_gatt_h4.pcap (linktype 201, HCI H4 with direction phdr)
     # A full GATT discovery + write + notification exchange over ATT.
     p_ble_gatt = output_dir / "ble_gatt_h4.pcap"
     ble_gatt_bytes = bytearray(make_pcap_header(linktype=201))

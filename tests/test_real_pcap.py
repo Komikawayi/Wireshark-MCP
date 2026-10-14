@@ -282,3 +282,32 @@ async def test_real_pcap_ble_tools_on_empty_capture(pcap_fixtures: dict[str, str
     parsed_gatt = parse_tool_result(await tools["wireshark_extract_gatt_timeline"](pcap))
     assert parsed_gatt["success"] is True
     assert parsed_gatt["data"]["timeline"] == []
+
+
+@pytest.mark.asyncio
+async def test_real_pcap_truncated_capture_returns_partial_rows_with_warning(pcap_fixtures: dict[str, str]) -> None:
+    """A capture killed mid-packet (tshark exit 14) must yield its dissected
+    rows plus the stderr warning instead of an ExecutionError. Real sniffer
+    captures get exactly this shape when the capture tool is killed (pkill)."""
+    client = TSharkClient()
+    pcap = pcap_fixtures["truncated"]
+
+    raw = await client.extract_fields(
+        pcap,
+        ["frame.number", "dns.qry.name"],
+        display_filter="dns",
+        limit=10,
+    )
+    parsed = parse_tool_result(raw)
+
+    assert parsed["success"] is True
+    assert "first.example.com" in parsed["data"]
+    assert "second.example.com" not in parsed["data"]  # the truncated packet never dissected
+    assert "cut short" in parsed["stderr"]
+
+    # The full tool pipeline must work on a truncated capture end to end.
+    tools = dict(make_threat_tools(client))
+    tool_result = parse_tool_result(await tools["wireshark_detect_dns_tunnel"](pcap))
+    assert tool_result["success"] is True
+    finding = tool_result["data"]["findings"][0]
+    assert finding["severity"] == "info"  # one clean query is no tunneling signal

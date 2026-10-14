@@ -15,6 +15,16 @@
   `wireshark_open_file` now recommends these tools for captures containing `btle`,
   `btatt`, or `bthci_acl`.
 
+## Fixed
+
+- Truncated captures no longer fail every tool: when a capture ends mid-packet
+  (exactly what a sniffer killed with pkill leaves behind), tshark exits 14
+  while still dissecting the rows it read. The client previously rejected any
+  non-zero exit; it now downgrades exit 14 with output present to a success
+  envelope carrying the "cut short" note on `stderr`, with the same downgrade
+  in the streaming field path. A `truncated_capture.pcap` fixture integration
+  test pins the behavior.
+
 ## 中文
 
 ### 新增
@@ -26,3 +36,11 @@
   ——Read Request、Write Request、Notification 等——同时支持空口 btle 抓包与 HCI
   snoop/H4 抓包）。工具面从 52 个扩展到 55 个；包含 `btle`、`btatt` 或 `bthci_acl`
   协议的抓包，`wireshark_open_file` 现在会推荐这些工具。
+
+## Fixed（修复）
+
+- 截断抓包不再让所有工具失败：抓包在包中途被切断时（嗅探工具被 pkill 杀掉正是这种形态），
+  tshark 以退出码 14 结束但仍解出有效数据。client 此前对任何非零退出一票否决，
+  现在会把退出码 14 且已有输出的情况降级为成功结果，并把"cut short"提示附在
+  `stderr` 字段；流式字段路径做同样降级。新增 `truncated_capture.pcap` fixture
+  的集成回归测试钉死此行为。

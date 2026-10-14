@@ -422,7 +422,9 @@ class WiresharkSuiteClient(
                     "bytes_read": bytes_read,
                     "error": {"type": "LimitExceeded", "message": "tshark stderr exceeded its safety limit"},
                 }
-            if proc.returncode != 0:
+            # Same downgrade as _run_command: exit 14 means the capture was
+            # truncated mid-packet; the rows already streamed are still valid.
+            if proc.returncode != 0 and not (proc.returncode == 14 and rows > 0):
                 return {
                     "success": False,
                     "rows": rows,
@@ -584,17 +586,27 @@ class WiresharkSuiteClient(
                 )
 
             if proc.returncode != 0 and not truncated:
-                logger.warning("Command failed (exit %d): %s", proc.returncode, safe_command)
-                return json.dumps(
-                    {
-                        "success": False,
-                        "error": {
-                            "type": "ExecutionError",
-                            "message": f"Command failed with exit code {proc.returncode}",
-                            "details": self._redact_diagnostics(error or final_output, cmd),
-                        },
-                    }
-                )
+                # tshark exits with 14 when the capture ends mid-packet (a sniffer
+                # killed with pkill leaves exactly this): the rows dissected so far
+                # are valid and stderr carries the "cut short" note. Downgrade to a
+                # success envelope with that note instead of failing every tool on
+                # an otherwise usable capture.
+                if proc.returncode == 14 and final_output:
+                    logger.warning(
+                        "tshark reported a truncated capture (exit 14); returning partial output: %s", safe_command
+                    )
+                else:
+                    logger.warning("Command failed (exit %d): %s", proc.returncode, safe_command)
+                    return json.dumps(
+                        {
+                            "success": False,
+                            "error": {
+                                "type": "ExecutionError",
+                                "message": f"Command failed with exit code {proc.returncode}",
+                                "details": self._redact_diagnostics(error or final_output, cmd),
+                            },
+                        }
+                    )
 
             for out_path in self._output_paths(cmd):
                 self._cache.invalidate_file(out_path)
