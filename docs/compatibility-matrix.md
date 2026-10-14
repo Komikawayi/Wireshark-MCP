@@ -42,11 +42,11 @@ Wireshark MCP interacts directly with the local system installation of `tshark`,
 
 | Engine Version | Platform | Compatibility Tier | Notes |
 | :--- | :--- | :--- | :--- |
-| **Wireshark 4.6.x** | macOS | **Locally Verified** | Tested against 4.6.6 with 5 synthetic pcap fixtures in `test_real_pcap.py`. |
+| **Wireshark 4.6.x** | macOS | **Locally Verified** | Tested against 4.6.6 with 5 synthetic pcap fixtures in `test_real_pcap.py`. BLE tools verified against 4.6.8 with the BLE fixtures (linktype 256 over-the-air and linktype 201 HCI H4). |
 | **Wireshark 4.6.x** | Windows Server | **CI Verified** | Pinned to 4.6.8 via Chocolatey in Windows GitHub Actions runner. |
 | **Wireshark 4.2.x** | Ubuntu Linux | **CI Verified** | Tested in Ubuntu GitHub Actions runner (`apt-get install -y tshark`). |
 | **Wireshark 4.0.x** | Linux / Windows | **Expected Compatible** | Core packet extraction and aggregation supported; field aliases mapped. |
-| **Wireshark 3.6.x** | Ubuntu 22.04 LTS | **Expected Compatible (Floor)** | Minimum supported version floor for basic display filters. |
+| **Wireshark 3.6.x** | Ubuntu 22.04 LTS | **Expected Compatible (Floor)** | Minimum supported version floor for basic display filters. BLE tools (`btle.advertising_header.*`, `btatt.handles_info`) are not verified on 3.6 — captures may return empty results. |
 | **< 3.6.0** | All | **Unsupported** | Lacks required dissector fields and modern JSON export options. |
 
 ---

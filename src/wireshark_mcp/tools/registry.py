@@ -143,6 +143,18 @@ PROTOCOL_TOOL_MAP: dict[str, list[Recommendation]] = {
     ],
     "btle": [
         Recommendation("wireshark_analyze_protocol", "ble"),
+        Recommendation("wireshark_extract_ble_devices"),
+        Recommendation("wireshark_detect_ble_scan_activity"),
+    ],
+    "btle_rf": [
+        Recommendation("wireshark_extract_ble_devices"),
+        Recommendation("wireshark_detect_ble_scan_activity"),
+    ],
+    "btatt": [
+        Recommendation("wireshark_extract_gatt_timeline"),
+    ],
+    "bthci_acl": [
+        Recommendation("wireshark_extract_gatt_timeline"),
     ],
     "wlan": [
         Recommendation("wireshark_analyze_protocol", "wifi"),
@@ -169,6 +181,7 @@ class ToolRegistry:
         """Register every analysis tool on the MCP server. Returns registered names."""
         from .analyze import make_analyze_tools
         from .anomaly import make_anomaly_tools
+        from .bluetooth import make_bluetooth_tools
         from .extract import make_extract_tools
         from .forensics import make_forensics_tools
         from .geoip import make_geoip_tools
@@ -187,6 +200,7 @@ class ToolRegistry:
             make_anomaly_tools,
             make_geoip_tools,
             make_yara_tools,
+            make_bluetooth_tools,
         ]
 
         for factory in factories:

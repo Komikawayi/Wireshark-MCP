@@ -7,7 +7,8 @@ keeps one oversized result from inflating the rest of a session.
 
 50,325 bytes before this work; 21,438 after consolidating the tool surface.
 Bump MAX_WIRE_BYTES deliberately — the slack is there to absorb a schema change,
-not a new tool.
+not a new tool. Raised to 24,000 for the 3 dedicated BLE tools (52 -> 55 tools,
+justified in test_public_tool_surface).
 """
 
 import asyncio
@@ -21,7 +22,7 @@ from wireshark_mcp.mcp_app import WiresharkMCP, cap_result_text
 from wireshark_mcp.server import _build_server
 from wireshark_mcp.tool_annotations import OUTPUT_PATH_PARAMS, WRITE_TOOLS
 
-MAX_WIRE_BYTES = 22_500
+MAX_WIRE_BYTES = 24_000
 REPO_ROOT = Path(__file__).parent.parent
 
 

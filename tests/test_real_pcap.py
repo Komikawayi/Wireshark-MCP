@@ -7,6 +7,7 @@ import pytest
 from conftest import call_tool_text
 from mcp.server import MCPServer
 
+from wireshark_mcp.tools.bluetooth import make_bluetooth_tools
 from wireshark_mcp.tools.envelope import parse_tool_result
 from wireshark_mcp.tools.security import make_security_tools
 from wireshark_mcp.tools.stats import register_stats_tools
@@ -175,3 +176,109 @@ async def test_real_pcap_empty_capture_handling(pcap_fixtures: dict[str, str]) -
     parsed_dns = parse_tool_result(raw_dns)
     assert parsed_dns["success"] is True
     assert parsed_dns["data"]["findings"] == []
+
+
+@pytest.mark.asyncio
+async def test_real_pcap_ble_device_inventory(pcap_fixtures: dict[str, str]) -> None:
+    client = TSharkClient()
+    tools = dict(make_bluetooth_tools(client))
+    pcap = pcap_fixtures["ble_adv"]
+
+    parsed = parse_tool_result(await tools["wireshark_extract_ble_devices"](pcap, limit=50))
+
+    assert parsed["success"] is True
+    data = parsed["data"]
+    assert parsed["coverage"]["devices"] == 3
+
+    by_addr = {d["address"]: d for d in data["devices"]}
+    assert by_addr["a2:d8:30:1e:9f:66"]["frame_count"] == 3
+    assert by_addr["a2:d8:30:1e:9f:66"]["address_type"] == "random"
+    assert by_addr["a2:d8:30:1e:9f:66"]["pdu_types"] == {"ADV_IND": 2, "SCAN_RSP": 1}
+    assert by_addr["a2:d8:30:1e:9f:66"]["names"] == ["TwinLight"]
+    assert by_addr["66:55:44:33:22:11"]["address_type"] == "public"
+    assert by_addr["66:55:44:33:22:11"]["company_ids"] == ["0x0059"]
+    assert by_addr["aa:bb:cc:dd:ee:ff"]["frame_count"] == 2
+
+    assert len(data["shared_name_groups"]) == 1
+    group = data["shared_name_groups"][0]
+    assert group["device_name"] == "TwinLight"
+    assert set(group["addresses"]) == {"a2:d8:30:1e:9f:66", "aa:bb:cc:dd:ee:ff"}
+
+
+@pytest.mark.asyncio
+async def test_real_pcap_ble_scan_activity(pcap_fixtures: dict[str, str]) -> None:
+    client = TSharkClient()
+    tools = dict(make_bluetooth_tools(client))
+    pcap = pcap_fixtures["ble_adv"]
+
+    parsed = parse_tool_result(await tools["wireshark_detect_ble_scan_activity"](pcap, limit=50))
+
+    assert parsed["success"] is True
+    scanners = parsed["data"]["scanners"]
+    assert len(scanners) == 1
+    assert scanners[0]["address"] == "ee:00:11:22:33:44"
+    assert scanners[0]["scan_requests"] == 3
+    assert scanners[0]["distinct_targets"] == 2
+    assert scanners[0]["top_targets"][0]["address"] == "a2:d8:30:1e:9f:66"
+
+    finding = parsed["data"]["findings"][0]
+    assert finding["severity"] == "info"
+    assert "btle.scanning_address == ee:00:11:22:33:44" in finding["evidence"][0]["filter"]
+
+
+@pytest.mark.asyncio
+async def test_real_pcap_gatt_timeline(pcap_fixtures: dict[str, str]) -> None:
+    client = TSharkClient()
+    tools = dict(make_bluetooth_tools(client))
+    pcap = pcap_fixtures["ble_gatt"]
+
+    parsed = parse_tool_result(await tools["wireshark_extract_gatt_timeline"](pcap, limit=50))
+
+    assert parsed["success"] is True
+    timeline = parsed["data"]["timeline"]
+    assert len(timeline) == 13
+
+    by_frame = {e["frame"]: e for e in timeline}
+    # Exchange MTU Request carries neither handle nor value.
+    assert by_frame[1]["operation"] == "Exchange MTU Request"
+    assert by_frame[1]["handle"] is None
+    # Read By Group Type Response: multi-value handle; per-entry raw values land in
+    # btatt.value (aggregator-joined). btatt.handles_info stays empty in this exchange.
+    assert by_frame[4]["operation"] == "Read By Group Type Response"
+    assert by_frame[4]["handle"] == "0x0001,0x0006"
+    assert by_frame[4]["value"] == "0018,0118"
+    assert by_frame[4]["handles_info"] is None
+    # Read By Type Response: handle linked via btatt.handle, value hex.
+    assert by_frame[8]["operation"] == "Read By Type Response"
+    assert by_frame[8]["handle"] == "0x000b"
+    assert by_frame[8]["value"] == "424c452d464958"
+    # Write Request / Response and Notification.
+    assert by_frame[11]["operation"] == "Write Request"
+    assert by_frame[11]["handle"] == "0x000c"
+    assert by_frame[11]["value"] == "010203"
+    assert by_frame[12]["handle"] is None
+    assert by_frame[13]["operation"] == "Handle Value Notification"
+    assert by_frame[13]["handle"] == "0x000d"
+
+    summary = parsed["data"]["operation_summary"]
+    assert summary["Read By Group Type Request"] == 1
+    assert summary["Exchange MTU Request"] == 1
+
+
+@pytest.mark.asyncio
+async def test_real_pcap_ble_tools_on_empty_capture(pcap_fixtures: dict[str, str]) -> None:
+    client = TSharkClient()
+    tools = dict(make_bluetooth_tools(client))
+    pcap = pcap_fixtures["empty"]
+
+    parsed_devices = parse_tool_result(await tools["wireshark_extract_ble_devices"](pcap))
+    assert parsed_devices["success"] is True
+    assert parsed_devices["data"]["devices"] == []
+
+    parsed_scanners = parse_tool_result(await tools["wireshark_detect_ble_scan_activity"](pcap))
+    assert parsed_scanners["success"] is True
+    assert parsed_scanners["data"]["scanners"] == []
+
+    parsed_gatt = parse_tool_result(await tools["wireshark_extract_gatt_timeline"](pcap))
+    assert parsed_gatt["success"] is True
+    assert parsed_gatt["data"]["timeline"] == []

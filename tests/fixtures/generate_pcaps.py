@@ -17,9 +17,9 @@ def _checksum(data: bytes) -> int:
     return ~s & 0xFFFF
 
 
-def make_pcap_header() -> bytes:
-    # magic, ver_major(2), ver_minor(4), thiszone(0), sigfigs(0), snaplen(65535), linktype_ethernet(1)
-    return struct.pack("<IHHiIII", 0xA1B2C3D4, 2, 4, 0, 0, 65535, 1)
+def make_pcap_header(linktype: int = 1) -> bytes:
+    # magic, ver_major(2), ver_minor(4), thiszone(0), sigfigs(0), snaplen(65535), linktype (1=Ethernet default)
+    return struct.pack("<IHHiIII", 0xA1B2C3D4, 2, 4, 0, 0, 65535, linktype)
 
 
 def make_pcap_packet(frame: bytes, sec: int = 0, usec: int = 0) -> bytes:
@@ -87,6 +87,66 @@ def make_dns_query(qname: str, qtype: int = 1, txid: int = 0x1234) -> bytes:
     header = struct.pack("!HHHHHH", txid, flags, 1, 0, 0, 0)
     question = encode_dns_name(qname) + struct.pack("!HH", qtype, 1)
     return header + question
+
+
+# ── Bluetooth Low Energy fixture builders ────────────────────────────────────
+
+# Advertising access address 0x8e89bed6, little-endian on air.
+ADV_ACCESS_ADDRESS = bytes.fromhex("d6be898e")
+
+# Nordic sniffer pseudo-header flags (little-endian u16): dewhitened (bit0) |
+# signal_power_valid (bit1) | crc_checked (bit10) | crc_valid (bit11).
+# Payload and CRC are stored PLAIN in this format; tshark trusts the flags and
+# does not re-verify. Matches real captures produced by whad (linktype 256).
+BTLE_FLAGS_PLAIN = 0x0C03
+
+
+def _crc24_ble(pdu: bytes, crc_init: int = 0xAAAAAA) -> int:
+    """BLE CRC-24 over a plain (dewhitened) PDU.
+
+    Reflected polynomial of 0x65B is 0xDA6000; advertising CRCInit 0x555555
+    bit-reversed is 0xAAAAAA. Verified byte-identical against a real Nordic
+    sniffer capture (stored CRC bytes 72 ac ba for frame 1).
+    """
+    crc = crc_init
+    for byte in pdu:
+        crc ^= byte
+        for _ in range(8):
+            crc = (crc >> 1) ^ 0xDA6000 if crc & 1 else crc >> 1
+    return crc & 0xFFFFFF
+
+
+def _btle_rf_frame(pdu: bytes, rf_channel: int = 0) -> bytes:
+    """Nordic btle_rf frame: 10-byte RF header + access address + PDU + CRC-24."""
+    hdr = struct.pack("<BBBBIH", rf_channel, 0xDE, 0x80, 0, 0, BTLE_FLAGS_PLAIN)
+    #               channel, -34dBm, noise, aa_offenses, ref_aa, flags (LE!)
+    return hdr + ADV_ACCESS_ADDRESS + pdu + struct.pack("<I", _crc24_ble(pdu))[:3]
+
+
+def _eir(ad_type: int, data: bytes) -> bytes:
+    return bytes([len(data) + 1, ad_type]) + data
+
+
+def _adv_pdu(pdu_type: int, header_bits: int, payload: bytes) -> bytes:
+    # TxAdd lives at bit 6 (0x40) per tshark 4.6.8 dissection behavior, matching
+    # a real capture (header byte 0x60 -> TxAdd: Random). A spec-literal 0x80
+    # reads as Reserved / randomized_tx=False.
+    return struct.pack("<BB", pdu_type | header_bits, len(payload)) + payload
+
+
+def _adv_address(addr: str) -> bytes:
+    """'a2:d8:30:1e:9f:66' -> little-endian on-air byte order (66 9f 1e 30 d8 a2)."""
+    return bytes.fromhex(addr.replace(":", ""))[::-1]
+
+
+def make_att_acl_packet(direction: int, att_pdu: bytes) -> bytes:
+    """HCI H4 ACL packet carrying an ATT PDU, for linktype 201 (H4 with phdr).
+
+    direction: 0 = sent to controller, 1 = received from controller (4-byte phdr).
+    """
+    l2cap = struct.pack("<HH", len(att_pdu), 0x0004) + att_pdu  # length, CID 0x0004 (ATT)
+    acl = struct.pack("<HH", 0x2000 | 0x000C, len(l2cap)) + l2cap  # handle 0x000C, PB first-auto-flushable
+    return struct.pack("<IB", direction, 0x02) + acl  # 4B direction phdr + H4 type ACL
 
 
 def build_all_fixtures(output_dir: Path) -> dict[str, Path]:
@@ -175,6 +235,70 @@ def build_all_fixtures(output_dir: Path) -> dict[str, Path]:
     multi_bytes.extend(make_pcap_packet(make_ethernet_frame(pkt), sec=4000, usec=0))
     p_multi.write_bytes(multi_bytes)
     generated["multivalue"] = p_multi
+
+    # 6. ble_advertising.pcap (linktype 256, Nordic btle_rf)
+    # Three advertisers, one active scanner, and one SCAN_RSP. Device A and B share
+    # the local name "TwinLight" (dual-address same-name detection path).
+    p_ble_adv = output_dir / "ble_advertising.pcap"
+    ble_adv_bytes = bytearray(make_pcap_header(linktype=256))
+
+    addr_a = "a2:d8:30:1e:9f:66"  # random address (TxAdd=1)
+    addr_b = "aa:bb:cc:dd:ee:ff"  # random address (TxAdd=1), same name as A
+    addr_c = "66:55:44:33:22:11"  # public address (TxAdd=0)
+    addr_s = "ee:00:11:22:33:44"  # scanner
+
+    def adv_payload(adv_a: str, eirs: bytes) -> bytes:
+        return _adv_address(adv_a) + eirs
+
+    flags_eir = _eir(0x01, b"\x06")  # LE General Discoverable + BR/EDR Not Supported
+
+    eir_a = flags_eir + _eir(0x09, b"TwinLight")
+    eir_b = _eir(0x09, b"TwinLight")
+    eir_c = flags_eir + _eir(0x09, b"StaticDev") + _eir(0xFF, struct.pack("<H", 0x0059) + b"\x55\x11")
+
+    ble_frames: list[bytes] = [
+        _btle_rf_frame(_adv_pdu(0x00, 0x40, adv_payload(addr_a, eir_a))),  # A ADV_IND
+        _btle_rf_frame(_adv_pdu(0x00, 0x00, adv_payload(addr_c, eir_c))),  # C ADV_IND (public)
+        _btle_rf_frame(_adv_pdu(0x00, 0x40, adv_payload(addr_b, eir_b))),  # B ADV_IND (same name)
+        _btle_rf_frame(_adv_pdu(0x03, 0x00, _adv_address(addr_s) + _adv_address(addr_a))),  # SCAN_REQ S->A
+        _btle_rf_frame(_adv_pdu(0x04, 0x40, adv_payload(addr_a, eir_a))),  # A SCAN_RSP
+        _btle_rf_frame(_adv_pdu(0x03, 0x00, _adv_address(addr_s) + _adv_address(addr_c))),  # SCAN_REQ S->C
+        _btle_rf_frame(_adv_pdu(0x00, 0x40, adv_payload(addr_a, eir_a))),  # A ADV_IND again
+        _btle_rf_frame(_adv_pdu(0x00, 0x40, adv_payload(addr_b, eir_b))),  # B ADV_IND again
+        _btle_rf_frame(_adv_pdu(0x03, 0x00, _adv_address(addr_s) + _adv_address(addr_a))),  # SCAN_REQ S->A
+    ]
+    for i, frame in enumerate(ble_frames):
+        ble_adv_bytes.extend(make_pcap_packet(frame, sec=6000, usec=i * 10000))
+
+    p_ble_adv.write_bytes(ble_adv_bytes)
+    generated["ble_adv"] = p_ble_adv
+
+    # 7. ble_gatt_h4.pcap (linktype 201, HCI H4 with direction phdr)
+    # A full GATT discovery + write + notification exchange over ATT.
+    p_ble_gatt = output_dir / "ble_gatt_h4.pcap"
+    ble_gatt_bytes = bytearray(make_pcap_header(linktype=201))
+
+    att_script: list[tuple[int, str]] = [
+        (0, "02f700"),  # Exchange MTU Request (no handle/value edge case)
+        (1, "03f700"),  # Exchange MTU Response
+        (0, "100100ffff0028"),  # Read By Group Type Request
+        (1, "1106010005000018060009000118"),  # RBGT Response: handles 0x0001,0x0006; handles_info 0018,0118
+        (0, "040a000f00"),  # Find Information Request
+        (1, "05010b000d29"),  # Find Information Response: format 0x01, handle 0x000b + UUID16 0x290d
+        (0, "080100ffff002a"),  # Read By Type Request (Device Name)
+        (1, "09090b00424c452d464958"),  # Read By Type Response: handle 0x000b, value "BLE-FIX"
+        (0, "0a0b00"),  # Read Request
+        (1, "0b424c452d464958"),  # Read Response: value present, handle unlinked
+        (0, "120c00010203"),  # Write Request: handle 0x000c, value 010203
+        (1, "13"),  # Write Response: no handle, no value
+        (1, "1b0d002a2b"),  # Handle Value Notification: handle 0x000d
+    ]
+    for i, (direction, hex_pdu) in enumerate(att_script):
+        frame = make_att_acl_packet(direction, bytes.fromhex(hex_pdu))
+        ble_gatt_bytes.extend(make_pcap_packet(frame, sec=5000, usec=i * 10000))
+
+    p_ble_gatt.write_bytes(ble_gatt_bytes)
+    generated["ble_gatt"] = p_ble_gatt
 
     return generated
 
