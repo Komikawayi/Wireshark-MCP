@@ -1,5 +1,6 @@
 """Bluetooth Low Energy analysis tools (advertising inventory, scanners, ATT/GATT timeline)."""
 
+import contextlib
 import logging
 from collections import Counter
 from typing import Any
@@ -358,10 +359,8 @@ def _split_handles(raw: str) -> list[int]:
     """Parse an aggregator-joined handle column ('0x0001,0x0006') into ints."""
     values: list[int] = []
     for part in _split_multivalue(raw):
-        try:
+        with contextlib.suppress(ValueError):
             values.append(int(part, 16))
-        except ValueError:
-            pass
     return values
 
 
@@ -745,7 +744,7 @@ def make_ble_protocol_handlers(client: TSharkClient) -> dict[str, ProtocolHandle
                 else:
                     uuid_pairs = [(uuid_hex, _uuid_label(uuid_hex)) for uuid_hex in uuid_value]
                 # zip truncates to the shortest list, absorbing leftover injections.
-                for start, end, (uuid_raw, label) in zip(starts, ends, uuid_pairs):
+                for start, end, (uuid_raw, label) in zip(starts, ends, uuid_pairs, strict=False):
                     services.append(
                         {
                             "start_handle": f"0x{start:04x}",
@@ -763,7 +762,7 @@ def make_ble_protocol_handlers(client: TSharkClient) -> dict[str, ProtocolHandle
                 # for clean single-entry responses. Pair only when they do; the
                 # 0x2803 declaration path provides labels otherwise.
                 if len(fit_handles) == len(fit_uuids):
-                    for fit_handle, fit_uuid in zip(fit_handles, fit_uuids):
+                    for fit_handle, fit_uuid in zip(fit_handles, fit_uuids, strict=False):
                         handle_labels.setdefault(f"0x{fit_handle:04x}", _uuid_label_from_display(fit_uuid))
             elif opcode == "0x08":  # Read By Type Request: remember the queried type
                 pending_rbt_type = _strip(parts[8]) or None
@@ -772,7 +771,7 @@ def make_ble_protocol_handlers(client: TSharkClient) -> dict[str, ProtocolHandle
                 # each entry value is properties(1) | value_handle(2) | uuid(2 or 16).
                 entry_handles = _split_handles(parts[3])
                 entry_values = _split_multivalue(parts[4])
-                for _decl_handle, entry_value in zip(entry_handles, entry_values):
+                for _decl_handle, entry_value in zip(entry_handles, entry_values, strict=False):
                     try:
                         raw = bytes.fromhex(entry_value)
                     except ValueError:

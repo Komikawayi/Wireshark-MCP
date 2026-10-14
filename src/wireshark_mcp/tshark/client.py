@@ -424,7 +424,10 @@ class WiresharkSuiteClient(
                 }
             # Same downgrade as _run_command: exit 14 means the capture was
             # truncated mid-packet; the rows already streamed are still valid.
-            if proc.returncode != 0 and not (proc.returncode == 14 and rows > 0):
+            # Old tshark (3.x/4.0/4.2) reports a mid-packet truncation with exit
+            # code 2; 4.4+ uses the dedicated warning code 14. Either way the rows
+            # dissected so far are valid, so both downgrade when output exists.
+            if proc.returncode != 0 and not (proc.returncode in (2, 14) and rows > 0):
                 return {
                     "success": False,
                     "rows": rows,
@@ -586,12 +589,12 @@ class WiresharkSuiteClient(
                 )
 
             if proc.returncode != 0 and not truncated:
-                # tshark exits with 14 when the capture ends mid-packet (a sniffer
-                # killed with pkill leaves exactly this): the rows dissected so far
-                # are valid and stderr carries the "cut short" note. Downgrade to a
-                # success envelope with that note instead of failing every tool on
-                # an otherwise usable capture.
-                if proc.returncode == 14 and final_output:
+                # A capture truncated mid-packet (a sniffer killed with pkill leaves
+                # exactly this) makes tshark exit 14 on 4.4+ and 2 on older releases
+                # while the rows dissected so far stay valid, and stderr carries the
+                # "cut short" note. Downgrade to a success envelope with that note
+                # instead of failing every tool on an otherwise usable capture.
+                if proc.returncode in (2, 14) and final_output:
                     logger.warning(
                         "tshark reported a truncated capture (exit 14); returning partial output: %s", safe_command
                     )

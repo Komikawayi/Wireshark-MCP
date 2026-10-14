@@ -246,7 +246,10 @@ async def test_real_pcap_gatt_timeline(pcap_fixtures: dict[str, str]) -> None:
     # Read By Group Type Response: multi-value handles + service table.
     assert by_frame[5]["operation"] == "Read By Group Type Response"
     assert by_frame[5]["handle"] == "0x0001,0x0006"
-    assert by_frame[5]["value"] == "0018,0118"
+    # The service UUIDs render into btatt.value on tshark 4.6.x and into
+    # btatt.uuid16 on older releases; the service table below is the
+    # version-independent assertion of the same fact.
+    assert by_frame[5]["value"] in ("0018,0118", None)
     assert [svc["label"] for svc in data["services"]] == [
         "Generic Access (0x1800)",
         "Generic Attribute (0x1801)",
@@ -337,6 +340,8 @@ async def test_real_pcap_truncated_capture_returns_partial_rows_with_warning(pca
     assert parsed["success"] is True
     assert "first.example.com" in parsed["data"]
     assert "second.example.com" not in parsed["data"]  # the truncated packet never dissected
+    # The warning text is stable across tshark releases (3.x -> 4.6), but the
+    # important contract is that the note arrives on stderr at all.
     assert "cut short" in parsed["stderr"]
 
     # The full tool pipeline must work on a truncated capture end to end.
