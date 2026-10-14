@@ -145,6 +145,7 @@ PROTOCOL_TOOL_MAP: dict[str, list[Recommendation]] = {
         Recommendation("wireshark_analyze_protocol", "ble"),
         Recommendation("wireshark_extract_ble_devices"),
         Recommendation("wireshark_detect_ble_scan_activity"),
+        Recommendation("wireshark_analyze_ble_connections"),
     ],
     "btle_rf": [
         Recommendation("wireshark_extract_ble_devices"),
@@ -155,6 +156,13 @@ PROTOCOL_TOOL_MAP: dict[str, list[Recommendation]] = {
     ],
     "bthci_acl": [
         Recommendation("wireshark_extract_gatt_timeline"),
+        Recommendation("wireshark_analyze_ble_connections"),
+    ],
+    "bthci_evt": [
+        Recommendation("wireshark_analyze_ble_connections"),
+    ],
+    "bthci_cmd": [
+        Recommendation("wireshark_analyze_ble_connections"),
     ],
     "wlan": [
         Recommendation("wireshark_analyze_protocol", "wifi"),

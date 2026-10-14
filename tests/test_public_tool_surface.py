@@ -95,11 +95,12 @@ def test_full_server_exposes_a_stable_tool_surface(monkeypatch) -> None:
     # list costs prefix bytes on every request and, more importantly, competes for the
     # model's attention at selection time. Lower this as tools are removed; raising it
     # should require justifying why a new tool is not reachable through an existing one.
-    # 55 = 52 + 3 dedicated BLE tools (advertising inventory / scan activity / GATT
-    # timeline): each needs Python-side aggregation across frames (per-device grouping,
-    # scanner fan-out, opcode semantics) that the flat TSV extractor behind
-    # wireshark_analyze_protocol cannot express.
-    assert len(names) <= 55, f"tool surface grew to {len(names)}; justify or consolidate"
+    # 56 = 52 + 4 dedicated BLE tools (advertising inventory / scan activity / GATT
+    # timeline with handle labels / connection lifecycle): each needs Python-side
+    # aggregation across frames (per-device grouping, scanner fan-out, opcode and
+    # service-table semantics, per-handle session accounting) that the flat TSV
+    # extractor behind wireshark_analyze_protocol cannot express.
+    assert len(names) <= 56, f"tool surface grew to {len(names)}; justify or consolidate"
 
 
 def test_every_protocol_recommendation_is_registered() -> None:

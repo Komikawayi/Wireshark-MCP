@@ -235,34 +235,68 @@ async def test_real_pcap_gatt_timeline(pcap_fixtures: dict[str, str]) -> None:
     parsed = parse_tool_result(await tools["wireshark_extract_gatt_timeline"](pcap, limit=50))
 
     assert parsed["success"] is True
-    timeline = parsed["data"]["timeline"]
-    assert len(timeline) == 13
+    data = parsed["data"]
+    timeline = data["timeline"]
+    assert len(timeline) == 15
 
     by_frame = {e["frame"]: e for e in timeline}
     # Exchange MTU Request carries neither handle nor value.
-    assert by_frame[1]["operation"] == "Exchange MTU Request"
-    assert by_frame[1]["handle"] is None
-    # Read By Group Type Response: multi-value handle; per-entry raw values land in
-    # btatt.value (aggregator-joined). btatt.handles_info stays empty in this exchange.
-    assert by_frame[4]["operation"] == "Read By Group Type Response"
-    assert by_frame[4]["handle"] == "0x0001,0x0006"
-    assert by_frame[4]["value"] == "0018,0118"
-    assert by_frame[4]["handles_info"] is None
+    assert by_frame[2]["operation"] == "Exchange MTU Request"
+    assert by_frame[2]["handle"] is None
+    # Read By Group Type Response: multi-value handles + service table.
+    assert by_frame[5]["operation"] == "Read By Group Type Response"
+    assert by_frame[5]["handle"] == "0x0001,0x0006"
+    assert by_frame[5]["value"] == "0018,0118"
+    assert [svc["label"] for svc in data["services"]] == [
+        "Generic Access (0x1800)",
+        "Generic Attribute (0x1801)",
+    ]
     # Read By Type Response: handle linked via btatt.handle, value hex.
-    assert by_frame[8]["operation"] == "Read By Type Response"
-    assert by_frame[8]["handle"] == "0x000b"
-    assert by_frame[8]["value"] == "424c452d464958"
+    assert by_frame[9]["operation"] == "Read By Type Response"
+    assert by_frame[9]["handle"] == "0x000b"
+    assert by_frame[9]["value"] == "424c452d464958"
+    # Characteristic Declaration (0x2803) resolves the Battery Level value handle.
+    assert data["handle_map"]["0x000e"] == "Battery Level (0x2a19)"
+    assert data["handle_map"]["0x000b"] == "Client Characteristic Configuration (0x2902)"
     # Write Request / Response and Notification.
-    assert by_frame[11]["operation"] == "Write Request"
-    assert by_frame[11]["handle"] == "0x000c"
-    assert by_frame[11]["value"] == "010203"
-    assert by_frame[12]["handle"] is None
-    assert by_frame[13]["operation"] == "Handle Value Notification"
-    assert by_frame[13]["handle"] == "0x000d"
+    assert by_frame[14]["operation"] == "Write Request"
+    assert by_frame[14]["handle"] == "0x000c"
+    assert by_frame[14]["value"] == "010203"
+    assert by_frame[15]["handle"] is None
+    assert by_frame[16]["operation"] == "Handle Value Notification"
+    assert by_frame[16]["handle"] == "0x000e"
+    assert by_frame[16]["attribute"] == "Battery Level (0x2a19)"
+    assert by_frame[16]["service"] == "Generic Attribute (0x1801)"
 
-    summary = parsed["data"]["operation_summary"]
+    summary = data["operation_summary"]
     assert summary["Read By Group Type Request"] == 1
     assert summary["Exchange MTU Request"] == 1
+
+
+@pytest.mark.asyncio
+async def test_real_pcap_ble_connections(pcap_fixtures: dict[str, str]) -> None:
+    client = TSharkClient()
+    tools = dict(make_bluetooth_tools(client))
+    pcap = pcap_fixtures["ble_gatt"]
+
+    parsed = parse_tool_result(await tools["wireshark_analyze_ble_connections"](pcap, limit=50))
+
+    assert parsed["success"] is True
+    connections = parsed["data"]["connections"]
+    assert len(connections) == 1
+    session = connections[0]
+    assert session["handle"] == "0x000c"
+    assert session["connect"]["peer_address"] == "80:a9:97:23:9b:44"
+    assert session["connect"]["interval_ms"] == 30.0
+    assert session["connect"]["supervision_timeout_ms"] == 720
+    assert len(session["parameter_updates"]) == 1
+    assert session["parameter_updates"][0]["interval_ms"] == 52.5
+    assert session["disconnect"]["reason"] == "Remote User Terminated Connection (0x13)"
+    assert session["session_duration_s"] == pytest.approx(0.17)
+    assert parsed["data"]["reason_summary"] == {"Remote User Terminated Connection (0x13)": 1}
+    # An HCI H4 capture carries no over-the-air CONNECT_IND frames.
+    assert parsed["data"]["over_air_connects"] == []
+    assert "Remote User Terminated Connection" in parsed["data"]["summary"]
 
 
 @pytest.mark.asyncio

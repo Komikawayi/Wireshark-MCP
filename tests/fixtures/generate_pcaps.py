@@ -149,6 +149,12 @@ def make_att_acl_packet(direction: int, att_pdu: bytes) -> bytes:
     return struct.pack("<IB", direction, 0x02) + acl  # 4B direction phdr + H4 type ACL
 
 
+def make_h4_event_packet(direction: int, event_code: int, params: bytes) -> bytes:
+    """HCI H4 event packet for linktype 201 (H4 with phdr)."""
+    event = bytes([event_code, len(params)]) + params
+    return struct.pack("<IB", direction, 0x04) + event  # 4B direction phdr + H4 type event
+
+
 def build_all_fixtures(output_dir: Path) -> dict[str, Path]:
     output_dir.mkdir(parents=True, exist_ok=True)
     generated: dict[str, Path] = {}
@@ -297,27 +303,58 @@ def build_all_fixtures(output_dir: Path) -> dict[str, Path]:
     generated["ble_adv"] = p_ble_adv
 
     # 8. ble_gatt_h4.pcap (linktype 201, HCI H4 with direction phdr)
-    # A full GATT discovery + write + notification exchange over ATT.
+    # A full connection lifecycle: LE Connection Complete, GATT discovery (with a
+    # Characteristic Declaration query), write, notification, parameter update,
+    # and a remote disconnect. All on connection handle 0x000C to peer 80:a9:97:23:9b:44.
     p_ble_gatt = output_dir / "ble_gatt_h4.pcap"
     ble_gatt_bytes = bytearray(make_pcap_header(linktype=201))
 
-    att_script: list[tuple[int, str]] = [
-        (0, "02f700"),  # Exchange MTU Request (no handle/value edge case)
-        (1, "03f700"),  # Exchange MTU Response
-        (0, "100100ffff0028"),  # Read By Group Type Request
-        (1, "1106010005000018060009000118"),  # RBGT Response: handles 0x0001,0x0006; handles_info 0018,0118
-        (0, "040a000f00"),  # Find Information Request
-        (1, "05010b000d29"),  # Find Information Response: format 0x01, handle 0x000b + UUID16 0x290d
-        (0, "080100ffff002a"),  # Read By Type Request (Device Name)
-        (1, "09090b00424c452d464958"),  # Read By Type Response: handle 0x000b, value "BLE-FIX"
-        (0, "0a0b00"),  # Read Request
-        (1, "0b424c452d464958"),  # Read Response: value present, handle unlinked
-        (0, "120c00010203"),  # Write Request: handle 0x000c, value 010203
-        (1, "13"),  # Write Response: no handle, no value
-        (1, "1b0d002a2b"),  # Handle Value Notification: handle 0x000d
+    def att(direction: int, hex_pdu: str) -> bytes:
+        return make_att_acl_packet(direction, bytes.fromhex(hex_pdu))
+
+    def evt(event_code: int, params: bytes) -> bytes:
+        return make_h4_event_packet(1, event_code, params)
+
+    peer_bytes = _adv_address("80:a9:97:23:9b:44")  # little-endian on the wire
+    le_conn_complete = (
+        bytes.fromhex("0100")  # subevent 0x01 (LE Connection Complete), status 0x00
+        + struct.pack("<H", 0x000C)  # connection handle
+        + bytes.fromhex("0000")  # role 0x00 (central), peer address type 0x00 (public)
+        + peer_bytes
+        + struct.pack("<HHH", 24, 0, 72)  # interval 24 (30ms), latency 0, timeout 72 (720ms)
+        + bytes.fromhex("05")  # central clock accuracy
+    )
+    conn_update = (
+        bytes.fromhex("0300")  # subevent 0x03 (LE Connection Update Complete), status 0x00
+        + struct.pack("<HHHH", 0x000C, 42, 0, 600)  # handle, interval 42 (52.5ms), latency 0, timeout 600 (6s)
+    )
+    disconnect = (
+        bytes.fromhex("00")  # status
+        + struct.pack("<H", 0x000C)  # connection handle
+        + bytes.fromhex("13")  # reason: Remote User Terminated Connection
+    )
+
+    gatt_frames: list[bytes] = [
+        evt(0x3E, le_conn_complete),  # frame 1: connection established
+        att(0, "02f700"),  # Exchange MTU Request (no handle/value edge case)
+        att(1, "03f700"),  # Exchange MTU Response
+        att(0, "100100ffff0028"),  # Read By Group Type Request (Primary Service)
+        att(1, "110601000500001806000f000118"),  # RBGT Rsp: GAP 0x0001-0x0005, GATT 0x0006-0x000f
+        att(0, "040a000f00"),  # Find Information Request
+        att(1, "05010b000229"),  # Find Info Rsp: handle 0x000b + CCCD 0x2902
+        att(0, "080100ffff002a"),  # Read By Type Request (Device Name)
+        att(1, "09090b00424c452d464958"),  # RBTR Rsp: handle 0x000b, value "BLE-FIX"
+        att(0, "080100ffff0328"),  # Read By Type Request (Characteristic Declaration)
+        att(1, "09070d000c0e00192a"),  # RBTR Rsp: decl 0x000d -> Battery Level, value handle 0x000e
+        att(0, "0a0b00"),  # Read Request
+        att(1, "0b424c452d464958"),  # Read Response: value present, handle unlinked
+        att(0, "120c00010203"),  # Write Request: handle 0x000c, value 010203
+        att(1, "13"),  # Write Response: no handle, no value
+        att(1, "1b0e002a2b"),  # Notification: handle 0x000e (Battery Level value handle)
+        evt(0x3E, conn_update),  # frame 17: connection parameters updated
+        evt(0x05, disconnect),  # frame 18: remote disconnect (0x13)
     ]
-    for i, (direction, hex_pdu) in enumerate(att_script):
-        frame = make_att_acl_packet(direction, bytes.fromhex(hex_pdu))
+    for i, frame in enumerate(gatt_frames):
         ble_gatt_bytes.extend(make_pcap_packet(frame, sec=5000, usec=i * 10000))
 
     p_ble_gatt.write_bytes(ble_gatt_bytes)
