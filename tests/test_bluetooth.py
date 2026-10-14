@@ -762,7 +762,7 @@ class TestGattLabelVersionShapes:
         rows = [
             GATT_HEADER,
             "10\t0.080000\t0x08\t\t\t\t0x0004\t\t0x2803",
-            "11\t0.090000\t0x09\t0x000d,0x000e\t\t\t0x0004\t\t\t\t0x2a19\t",
+            "11\t0.090000\t0x09\t0x000d,0x000e\t\t\t0x0004\t\t0x2a19,0x2803\t\t",
         ]
         mock_client.extract_fields.return_value = success_response("\n".join(rows))
 
@@ -777,7 +777,7 @@ class TestGattLabelVersionShapes:
         rows = [
             GATT_HEADER,
             "10\t0.080000\t0x08\t\t\t\t0x0004\t\t0x2803",
-            f"11\t0.090000\t0x09\t0x000d,0x000e\t\t\t0x0004\t\t\t\t\t{uuid128}",
+            f"11\t0.090000\t0x09\t0x000d,0x000e\t\t\t0x0004\t\t\t{uuid128}\t",
         ]
         mock_client.extract_fields.return_value = success_response("\n".join(rows))
 
@@ -795,7 +795,7 @@ class TestGattLabelVersionShapes:
         rows = [
             GATT_HEADER,
             "10\t0.080000\t0x08\t\t\t\t0x0004\t\t0x2803",
-            "11\t0.090000\t0x09\t0x0002,0x0003,0x0004,0x0005\t\t\t0x0004\t\t\t\t0x2a00,0x2a00\t",
+            "11\t0.090000\t0x09\t0x0002,0x0003,0x0004,0x0005\t\t\t0x0004\t\t0x2a00,0x2a00\t\t",
         ]
         mock_client.extract_fields.return_value = success_response("\n".join(rows))
 

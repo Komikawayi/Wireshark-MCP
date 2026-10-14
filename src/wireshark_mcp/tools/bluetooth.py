@@ -796,14 +796,19 @@ def make_ble_protocol_handlers(client: TSharkClient) -> dict[str, ProtocolHandle
                                 f"{name} (0x{uuid_int:04x})" if name else f"0x{uuid_int:04x}"
                             )
                 else:
-                    # Structured-field shape. Guard against tshark 4.6's request
-                    # correlation, which duplicates the *queried* uuid into
-                    # characteristic_uuid16 (e.g. "0x2a00,0x2a00" for a two-entry
-                    # response covering different characteristics): pairing those
-                    # would mislabel handles. Only pair when the uuid instances are
-                    # distinct, which is the clean per-entry shape older releases
-                    # emit.
-                    char_uuids = _split_multivalue(parts[11]) or _split_multivalue(parts[10])
+                    # Structured-field shape on tshark <= 4.2 (confirmed in the
+                    # release-4.2 dissector): the value handle reuses btatt.handle
+                    # (handles arrive as [declaration, value_handle] per entry) and
+                    # the entry UUID renders into btatt.uuid16 / btatt.uuid128,
+                    # trailed by the generated queried-type instance. Filter the
+                    # injection like the RBGT path. Guard against tshark 4.6's
+                    # correlation, which can duplicate one uuid across entries
+                    # ("0x2a00,0x2a00" for a two-entry response): pairing those
+                    # would mislabel handles, and a wrong label is worse than none.
+                    # Only pair when the uuid instances are distinct.
+                    char_uuids = _split_multivalue(parts[9]) or [
+                        u for u in _split_multivalue(parts[8]) if u not in ("0x2800", "0x2801")
+                    ]
                     if len(set(char_uuids)) == len(char_uuids):
                         for value_handle, char_uuid in zip(entry_handles[1::2], char_uuids, strict=False):
                             if char_uuid.startswith("0x"):
