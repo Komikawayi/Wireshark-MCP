@@ -5,7 +5,7 @@ from collections import Counter
 from typing import Any
 
 from ..tshark.client import TSharkClient
-from .envelope import envelope_response, normalize_tool_result, parse_tool_result
+from .envelope import ProtocolHandler, envelope_response, normalize_tool_result, parse_tool_result
 from .findings import Finding, FindingEvidence
 from .formatting import OK, WARN
 
@@ -249,10 +249,17 @@ def _split_handles(raw: str) -> list[int]:
     return values
 
 
-def make_bluetooth_tools(client: TSharkClient) -> list[tuple[str, Any]]:
-    """Build Bluetooth LE analysis tools."""
+def make_ble_protocol_handlers(client: TSharkClient) -> dict[str, ProtocolHandler]:
+    """Build the BLE protocol handlers for wireshark_analyze_protocol.
 
-    async def wireshark_extract_ble_devices(pcap_file: str, limit: int = 100) -> str:
+    Each handler follows the shared (pcap_file, limit) -> envelope signature so
+    the dispatcher can call every protocol uniformly. The deep aggregation lives
+    here in Python — per-device grouping, scanner fan-out, service-table and
+    handle-label resolution, per-handle session accounting — because a flat
+    field extractor cannot express it.
+    """
+
+    async def ble_devices(pcap_file: str, limit: int = 100) -> str:
         """[Protocol] BLE advertising device inventory: devices by address with frame counts, names, company IDs, address type, dual-address same-name detection."""
         result = await client.extract_fields(
             pcap_file,
@@ -400,7 +407,7 @@ def make_bluetooth_tools(client: TSharkClient) -> list[tuple[str, Any]]:
             warnings=warnings or None,
         )
 
-    async def wireshark_detect_ble_scan_activity(pcap_file: str, limit: int = 100) -> str:
+    async def ble_scan_activity(pcap_file: str, limit: int = 100) -> str:
         """[Protocol] Detect BLE active scanners: SCAN_REQ initiators with request counts and scanned-target distribution."""
         result = await client.extract_fields(
             pcap_file,
@@ -540,7 +547,7 @@ def make_bluetooth_tools(client: TSharkClient) -> list[tuple[str, Any]]:
             warnings=warnings or None,
         )
 
-    async def wireshark_extract_gatt_timeline(pcap_file: str, limit: int = 100) -> str:
+    async def ble_gatt_timeline(pcap_file: str, limit: int = 100) -> str:
         """[Protocol] ATT/GATT timeline: time, semantic opcode, handle(s), value, with services and handle labels resolved from discovery."""
         result = await client.extract_fields(
             pcap_file,
@@ -740,7 +747,7 @@ def make_bluetooth_tools(client: TSharkClient) -> list[tuple[str, Any]]:
             warnings=warnings or None,
         )
 
-    async def wireshark_analyze_ble_connections(pcap_file: str, limit: int = 100) -> str:
+    async def ble_connections(pcap_file: str, limit: int = 100) -> str:
         """[Protocol] BLE connection lifecycle: HCI sessions per handle with link params, duration, disconnect reasons; over-the-air CONNECT_IND."""
         hci_filter = "bthci_evt.code == 0x3e"
         hci_result = await client.extract_fields(
@@ -1009,9 +1016,9 @@ def make_bluetooth_tools(client: TSharkClient) -> list[tuple[str, Any]]:
             warnings=warnings or None,
         )
 
-    return [
-        ("wireshark_extract_ble_devices", wireshark_extract_ble_devices),
-        ("wireshark_detect_ble_scan_activity", wireshark_detect_ble_scan_activity),
-        ("wireshark_extract_gatt_timeline", wireshark_extract_gatt_timeline),
-        ("wireshark_analyze_ble_connections", wireshark_analyze_ble_connections),
-    ]
+    return {
+        "ble_devices": ble_devices,
+        "ble_scan_activity": ble_scan_activity,
+        "ble_gatt_timeline": ble_gatt_timeline,
+        "ble_connections": ble_connections,
+    }

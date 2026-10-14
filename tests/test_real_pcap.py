@@ -7,7 +7,7 @@ import pytest
 from conftest import call_tool_text
 from mcp.server import MCPServer
 
-from wireshark_mcp.tools.bluetooth import make_bluetooth_tools
+from wireshark_mcp.tools.bluetooth import make_ble_protocol_handlers
 from wireshark_mcp.tools.envelope import parse_tool_result
 from wireshark_mcp.tools.security import make_security_tools
 from wireshark_mcp.tools.stats import register_stats_tools
@@ -181,10 +181,10 @@ async def test_real_pcap_empty_capture_handling(pcap_fixtures: dict[str, str]) -
 @pytest.mark.asyncio
 async def test_real_pcap_ble_device_inventory(pcap_fixtures: dict[str, str]) -> None:
     client = TSharkClient()
-    tools = dict(make_bluetooth_tools(client))
+    handlers = make_ble_protocol_handlers(client)
     pcap = pcap_fixtures["ble_adv"]
 
-    parsed = parse_tool_result(await tools["wireshark_extract_ble_devices"](pcap, limit=50))
+    parsed = parse_tool_result(await handlers["ble_devices"](pcap, limit=50))
 
     assert parsed["success"] is True
     data = parsed["data"]
@@ -208,10 +208,10 @@ async def test_real_pcap_ble_device_inventory(pcap_fixtures: dict[str, str]) -> 
 @pytest.mark.asyncio
 async def test_real_pcap_ble_scan_activity(pcap_fixtures: dict[str, str]) -> None:
     client = TSharkClient()
-    tools = dict(make_bluetooth_tools(client))
+    handlers = make_ble_protocol_handlers(client)
     pcap = pcap_fixtures["ble_adv"]
 
-    parsed = parse_tool_result(await tools["wireshark_detect_ble_scan_activity"](pcap, limit=50))
+    parsed = parse_tool_result(await handlers["ble_scan_activity"](pcap, limit=50))
 
     assert parsed["success"] is True
     scanners = parsed["data"]["scanners"]
@@ -229,10 +229,10 @@ async def test_real_pcap_ble_scan_activity(pcap_fixtures: dict[str, str]) -> Non
 @pytest.mark.asyncio
 async def test_real_pcap_gatt_timeline(pcap_fixtures: dict[str, str]) -> None:
     client = TSharkClient()
-    tools = dict(make_bluetooth_tools(client))
+    handlers = make_ble_protocol_handlers(client)
     pcap = pcap_fixtures["ble_gatt"]
 
-    parsed = parse_tool_result(await tools["wireshark_extract_gatt_timeline"](pcap, limit=50))
+    parsed = parse_tool_result(await handlers["ble_gatt_timeline"](pcap, limit=50))
 
     assert parsed["success"] is True
     data = parsed["data"]
@@ -276,10 +276,10 @@ async def test_real_pcap_gatt_timeline(pcap_fixtures: dict[str, str]) -> None:
 @pytest.mark.asyncio
 async def test_real_pcap_ble_connections(pcap_fixtures: dict[str, str]) -> None:
     client = TSharkClient()
-    tools = dict(make_bluetooth_tools(client))
+    handlers = make_ble_protocol_handlers(client)
     pcap = pcap_fixtures["ble_gatt"]
 
-    parsed = parse_tool_result(await tools["wireshark_analyze_ble_connections"](pcap, limit=50))
+    parsed = parse_tool_result(await handlers["ble_connections"](pcap, limit=50))
 
     assert parsed["success"] is True
     connections = parsed["data"]["connections"]
@@ -302,18 +302,18 @@ async def test_real_pcap_ble_connections(pcap_fixtures: dict[str, str]) -> None:
 @pytest.mark.asyncio
 async def test_real_pcap_ble_tools_on_empty_capture(pcap_fixtures: dict[str, str]) -> None:
     client = TSharkClient()
-    tools = dict(make_bluetooth_tools(client))
+    handlers = make_ble_protocol_handlers(client)
     pcap = pcap_fixtures["empty"]
 
-    parsed_devices = parse_tool_result(await tools["wireshark_extract_ble_devices"](pcap))
+    parsed_devices = parse_tool_result(await handlers["ble_devices"](pcap))
     assert parsed_devices["success"] is True
     assert parsed_devices["data"]["devices"] == []
 
-    parsed_scanners = parse_tool_result(await tools["wireshark_detect_ble_scan_activity"](pcap))
+    parsed_scanners = parse_tool_result(await handlers["ble_scan_activity"](pcap))
     assert parsed_scanners["success"] is True
     assert parsed_scanners["data"]["scanners"] == []
 
-    parsed_gatt = parse_tool_result(await tools["wireshark_extract_gatt_timeline"](pcap))
+    parsed_gatt = parse_tool_result(await handlers["ble_gatt_timeline"](pcap))
     assert parsed_gatt["success"] is True
     assert parsed_gatt["data"]["timeline"] == []
 

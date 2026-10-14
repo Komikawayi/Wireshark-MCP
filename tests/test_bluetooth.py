@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 import pytest
 from conftest import MockTSharkClient
 
-from wireshark_mcp.tools.bluetooth import make_bluetooth_tools
+from wireshark_mcp.tools.bluetooth import make_ble_protocol_handlers
 from wireshark_mcp.tools.envelope import envelope_response, error_response, parse_tool_result, success_response
 
 DEV_HEADER = (
@@ -120,8 +120,8 @@ class TestBleDevicesSemantics:
         ]
         mock_client.extract_fields.return_value = success_response("\n".join(rows))
 
-        tools = dict(make_bluetooth_tools(mock_client))
-        parsed = parse_tool_result(await tools["wireshark_extract_ble_devices"]("test.pcap"))
+        handlers = make_ble_protocol_handlers(mock_client)
+        parsed = parse_tool_result(await handlers["ble_devices"]("test.pcap"))
 
         assert parsed["success"] is True
         data = parsed["data"]
@@ -148,8 +148,8 @@ class TestBleDevicesSemantics:
         ]
         mock_client.extract_fields.return_value = success_response("\n".join(rows))
 
-        tools = dict(make_bluetooth_tools(mock_client))
-        parsed = parse_tool_result(await tools["wireshark_extract_ble_devices"]("test.pcap"))
+        handlers = make_ble_protocol_handlers(mock_client)
+        parsed = parse_tool_result(await handlers["ble_devices"]("test.pcap"))
 
         device = parsed["data"]["devices"][0]
         assert device["names"] == ["NameA", "NameB"]
@@ -160,8 +160,8 @@ class TestBleDevicesSemantics:
         mock_client = AsyncMock()
         mock_client.extract_fields.return_value = success_response("")
 
-        tools = dict(make_bluetooth_tools(mock_client))
-        parsed = parse_tool_result(await tools["wireshark_extract_ble_devices"]("test.pcap"))
+        handlers = make_ble_protocol_handlers(mock_client)
+        parsed = parse_tool_result(await handlers["ble_devices"]("test.pcap"))
 
         assert parsed["success"] is True
         assert parsed["data"]["devices"] == []
@@ -173,8 +173,8 @@ class TestBleDevicesSemantics:
         rows = "\n".join([DEV_HEADER, "1\ta2:d8:30:1e:9f:66\t0x00\tTrue\tTwinLight\t"])
         mock_client.extract_fields.return_value = envelope_response(rows, truncated=True)
 
-        tools = dict(make_bluetooth_tools(mock_client))
-        parsed = parse_tool_result(await tools["wireshark_extract_ble_devices"]("test.pcap"))
+        handlers = make_ble_protocol_handlers(mock_client)
+        parsed = parse_tool_result(await handlers["ble_devices"]("test.pcap"))
 
         assert parsed["coverage"]["status"] == "partial"
         assert any("lower bounds" in w for w in parsed["warnings"])
@@ -187,8 +187,8 @@ class TestBleDevicesSemantics:
         rows = "\n".join([DEV_HEADER, "1\ta2:d8:30:1e:9f:66\t0x00\tTrue\tTwinLight"])
         mock_client.extract_fields.return_value = success_response(rows)
 
-        tools = dict(make_bluetooth_tools(mock_client))
-        parsed = parse_tool_result(await tools["wireshark_extract_ble_devices"]("test.pcap"))
+        handlers = make_ble_protocol_handlers(mock_client)
+        parsed = parse_tool_result(await handlers["ble_devices"]("test.pcap"))
 
         device = parsed["data"]["devices"][0]
         assert device["address"] == "a2:d8:30:1e:9f:66"
@@ -211,8 +211,8 @@ class TestBleScanActivitySemantics:
         ]
         mock_client.extract_fields.return_value = success_response("\n".join(rows))
 
-        tools = dict(make_bluetooth_tools(mock_client))
-        parsed = parse_tool_result(await tools["wireshark_detect_ble_scan_activity"]("test.pcap"))
+        handlers = make_ble_protocol_handlers(mock_client)
+        parsed = parse_tool_result(await handlers["ble_scan_activity"]("test.pcap"))
 
         assert parsed["success"] is True
         scanners = parsed["data"]["scanners"]
@@ -232,8 +232,8 @@ class TestBleScanActivitySemantics:
         mock_client = AsyncMock()
         mock_client.extract_fields.return_value = success_response("")
 
-        tools = dict(make_bluetooth_tools(mock_client))
-        parsed = parse_tool_result(await tools["wireshark_detect_ble_scan_activity"]("test.pcap"))
+        handlers = make_ble_protocol_handlers(mock_client)
+        parsed = parse_tool_result(await handlers["ble_scan_activity"]("test.pcap"))
 
         assert parsed["success"] is True
         assert parsed["data"]["findings"] == []
@@ -255,8 +255,8 @@ class TestGattTimelineSemantics:
         ]
         mock_client.extract_fields.return_value = success_response("\n".join(rows))
 
-        tools = dict(make_bluetooth_tools(mock_client))
-        parsed = parse_tool_result(await tools["wireshark_extract_gatt_timeline"]("test.pcap"))
+        handlers = make_ble_protocol_handlers(mock_client)
+        parsed = parse_tool_result(await handlers["ble_gatt_timeline"]("test.pcap"))
 
         assert parsed["success"] is True
         timeline = parsed["data"]["timeline"]
@@ -283,8 +283,8 @@ class TestGattTimelineSemantics:
         ]
         mock_client.extract_fields.return_value = success_response("\n".join(rows))
 
-        tools = dict(make_bluetooth_tools(mock_client))
-        parsed = parse_tool_result(await tools["wireshark_extract_gatt_timeline"]("test.pcap"))
+        handlers = make_ble_protocol_handlers(mock_client)
+        parsed = parse_tool_result(await handlers["ble_gatt_timeline"]("test.pcap"))
 
         event = parsed["data"]["timeline"][0]
         assert event["operation"] == "Write Response"
@@ -300,8 +300,8 @@ class TestGattTimelineSemantics:
         ]
         mock_client.extract_fields.return_value = success_response("\n".join(rows))
 
-        tools = dict(make_bluetooth_tools(mock_client))
-        parsed = parse_tool_result(await tools["wireshark_extract_gatt_timeline"]("test.pcap"))
+        handlers = make_ble_protocol_handlers(mock_client)
+        parsed = parse_tool_result(await handlers["ble_gatt_timeline"]("test.pcap"))
 
         event = parsed["data"]["timeline"][0]
         assert event["handle"] is None
@@ -312,8 +312,8 @@ class TestGattTimelineSemantics:
         mock_client = AsyncMock()
         mock_client.extract_fields.return_value = error_response("tshark failed")
 
-        tools = dict(make_bluetooth_tools(mock_client))
-        parsed = parse_tool_result(await tools["wireshark_extract_gatt_timeline"]("test.pcap"))
+        handlers = make_ble_protocol_handlers(mock_client)
+        parsed = parse_tool_result(await handlers["ble_gatt_timeline"]("test.pcap"))
 
         assert parsed["success"] is False
         assert parsed["error"]["message"] == "tshark failed"
@@ -343,8 +343,8 @@ class TestGattLabelResolution:
         ]
         mock_client.extract_fields.return_value = success_response("\n".join(rows))
 
-        tools = dict(make_bluetooth_tools(mock_client))
-        parsed = parse_tool_result(await tools["wireshark_extract_gatt_timeline"]("test.pcap"))
+        handlers = make_ble_protocol_handlers(mock_client)
+        parsed = parse_tool_result(await handlers["ble_gatt_timeline"]("test.pcap"))
 
         assert parsed["success"] is True
         data = parsed["data"]
@@ -373,8 +373,8 @@ class TestGattLabelResolution:
         ]
         mock_client.extract_fields.return_value = success_response("\n".join(rows))
 
-        tools = dict(make_bluetooth_tools(mock_client))
-        parsed = parse_tool_result(await tools["wireshark_extract_gatt_timeline"]("test.pcap"))
+        handlers = make_ble_protocol_handlers(mock_client)
+        parsed = parse_tool_result(await handlers["ble_gatt_timeline"]("test.pcap"))
 
         handle_map = parsed["data"]["handle_map"]
         # The 16-byte UUID is parsed little-endian, so the label carries the byte-reversed hex.
@@ -436,8 +436,8 @@ class TestBleConnectionsSemantics:
             success_response(""),  # no over-the-air CONNECT_IND in an HCI capture
         ]
 
-        tools = dict(make_bluetooth_tools(mock_client))
-        parsed = parse_tool_result(await tools["wireshark_analyze_ble_connections"]("test.pcap"))
+        handlers = make_ble_protocol_handlers(mock_client)
+        parsed = parse_tool_result(await handlers["ble_connections"]("test.pcap"))
 
         assert parsed["success"] is True
         connections = parsed["data"]["connections"]
@@ -469,8 +469,8 @@ class TestBleConnectionsSemantics:
             success_response("\n".join(ota_rows)),
         ]
 
-        tools = dict(make_bluetooth_tools(mock_client))
-        parsed = parse_tool_result(await tools["wireshark_analyze_ble_connections"]("test.pcap"))
+        handlers = make_ble_protocol_handlers(mock_client)
+        parsed = parse_tool_result(await handlers["ble_connections"]("test.pcap"))
 
         assert parsed["success"] is True
         ota = parsed["data"]["over_air_connects"]
@@ -490,8 +490,8 @@ class TestBleConnectionsSemantics:
             success_response(""),
         ]
 
-        tools = dict(make_bluetooth_tools(mock_client))
-        parsed = parse_tool_result(await tools["wireshark_analyze_ble_connections"]("test.pcap"))
+        handlers = make_ble_protocol_handlers(mock_client)
+        parsed = parse_tool_result(await handlers["ble_connections"]("test.pcap"))
 
         assert parsed["success"] is True
         assert parsed["data"]["connections"] == []
@@ -514,8 +514,8 @@ class TestBleConnectionsSemantics:
             success_response(""),
         ]
 
-        tools = dict(make_bluetooth_tools(mock_client))
-        parsed = parse_tool_result(await tools["wireshark_analyze_ble_connections"]("test.pcap"))
+        handlers = make_ble_protocol_handlers(mock_client)
+        parsed = parse_tool_result(await handlers["ble_connections"]("test.pcap"))
 
         connections = parsed["data"]["connections"]
         assert len(connections) == 1
@@ -531,8 +531,8 @@ class TestBleConnectionsSemantics:
             success_response(""),
         ]
 
-        tools = dict(make_bluetooth_tools(mock_client))
-        parsed = parse_tool_result(await tools["wireshark_analyze_ble_connections"]("test.pcap"))
+        handlers = make_ble_protocol_handlers(mock_client)
+        parsed = parse_tool_result(await handlers["ble_connections"]("test.pcap"))
 
         assert parsed["coverage"]["status"] == "partial"
         assert any("lower bounds" in w for w in parsed["warnings"])
@@ -558,8 +558,8 @@ class TestBleConnectionsRealWorldShapes:
             success_response(""),
         ]
 
-        tools = dict(make_bluetooth_tools(mock_client))
-        parsed = parse_tool_result(await tools["wireshark_analyze_ble_connections"]("test.pcap"))
+        handlers = make_ble_protocol_handlers(mock_client)
+        parsed = parse_tool_result(await handlers["ble_connections"]("test.pcap"))
 
         connections = parsed["data"]["connections"]
         assert len(connections) == 1

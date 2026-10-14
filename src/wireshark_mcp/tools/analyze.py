@@ -27,6 +27,10 @@ from .protocol import make_protocol_handlers
 # not called `http2`/`icmp`, which would imply they return all such traffic.
 Protocol = Literal[
     "ble",
+    "ble_connections",
+    "ble_devices",
+    "ble_gatt_timeline",
+    "ble_scan_activity",
     "coap",
     "dhcp",
     "dnp3",
@@ -73,7 +77,7 @@ def make_analyze_tools(client: TSharkClient) -> list[tuple[str, Any]]:
     }
 
     async def wireshark_analyze_protocol(pcap_file: str, protocol: Protocol, limit: int = 100) -> str:
-        """[Protocol] Analyze one protocol with preset fields and filter. Returns a summary and bounded rows; RTP/SMB use fixed tables."""
+        """[Protocol] Analyze one protocol with preset fields and filter. Returns a summary and bounded rows; BLE values add device inventory, scanners, GATT timeline, connection lifecycle."""
         handler = handlers.get(protocol)
         if handler is None:
             return error_response(
