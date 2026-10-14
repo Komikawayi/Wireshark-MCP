@@ -60,8 +60,17 @@ PDU_NAMES: dict[int, str] = {
 
 
 def _strip(raw: str) -> str:
-    """tshark quote=d wraps every value in double quotes."""
-    return raw.strip().strip('"').strip()
+    """tshark quote=d wraps values in double quotes; multi-value cells split on
+    the aggregator leave single-sided quotes on the first/last fragment, so
+    peel whitespace and quote characters from both ends in one pass."""
+    return raw.strip(' \t\r\n"')
+
+
+def _pad(parts: list[str], size: int) -> list[str]:
+    """tshark drops trailing tabs for empty tail fields; pad once so indexing is direct."""
+    if len(parts) < size:
+        parts.extend([""] * (size - len(parts)))
+    return parts
 
 
 def _col(parts: list[str], index: int) -> str:
@@ -414,18 +423,16 @@ def make_ble_protocol_handlers(client: TSharkClient) -> dict[str, ProtocolHandle
         devices: dict[str, dict[str, Any]] = {}
         rows = 0
         for line in lines[start_idx:]:
-            parts = line.split("\t")
-            if len(parts) < 2:  # need at least the address column
-                continue
+            parts = _pad(line.split("\t"), 6)
             addr = _strip(parts[1])
             if not addr:
                 continue
             rows += 1
-            frame_raw = _strip(_col(parts, 0))
+            frame_raw = _strip(parts[0])
             frame = int(frame_raw) if frame_raw.isdigit() else None
-            dev = devices.setdefault(
-                addr,
-                {
+            dev = devices.get(addr)
+            if dev is None:  # build the row bucket once, not on every frame
+                dev = devices[addr] = {
                     "frame_count": 0,
                     "pdu_types": Counter(),
                     "names": set(),
@@ -433,15 +440,14 @@ def make_ble_protocol_handlers(client: TSharkClient) -> dict[str, ProtocolHandle
                     "txadd": set(),
                     "first_frame": frame,
                     "last_frame": frame,
-                },
-            )
+                }
             dev["frame_count"] += 1
-            dev["pdu_types"][_pdu_name(_col(parts, 2))] += 1
-            for name in _split_multivalue(_col(parts, 4)):
+            dev["pdu_types"][_pdu_name(parts[2])] += 1
+            for name in _split_multivalue(parts[4]):
                 dev["names"].add(name)
-            for company in _split_multivalue(_col(parts, 5)):
+            for company in _split_multivalue(parts[5]):
                 dev["company_ids"].add(company)
-            txadd = _strip(_col(parts, 3))
+            txadd = _strip(parts[3])
             if txadd:
                 dev["txadd"].add(txadd)
             if frame is not None:
@@ -566,16 +572,15 @@ def make_ble_protocol_handlers(client: TSharkClient) -> dict[str, ProtocolHandle
             rows += 1
             frame_raw = _strip(_col(parts, 0))
             frame = int(frame_raw) if frame_raw.isdigit() else None
-            entry = scanners.setdefault(
-                scanner,
-                {
+            entry = scanners.get(scanner)
+            if entry is None:  # build the scanner bucket once
+                entry = scanners[scanner] = {
                     "scan_requests": 0,
                     "targets": Counter(),
                     "txadd": set(),
                     "first_frame": frame,
                     "last_frame": frame,
-                },
-            )
+                }
             entry["scan_requests"] += 1
             if target:
                 entry["targets"][target] += 1
@@ -702,12 +707,17 @@ def make_ble_protocol_handlers(client: TSharkClient) -> dict[str, ProtocolHandle
         lines = data.strip().splitlines()
         start_idx = 1 if "frame.number" in lines[0] else 0
 
-        parsed_rows: list[list[str]] = []
+        # Parse each row once (split + pad + opcode); both passes below consume
+        # this structure so splitting and opcode decoding never run twice.
+        parsed_rows: list[tuple[list[str], str, str]] = []
         for line in lines[start_idx:]:
             parts = line.split("\t")
             if len(parts) < 3:  # need frame, time, opcode
                 continue
-            parsed_rows.append(parts)
+            if len(parts) < 10:
+                parts.extend([""] * (10 - len(parts)))
+            opcode, operation = _parse_opcode(parts[2])
+            parsed_rows.append((parts, opcode, operation))
 
         # First pass: resolve services and handle -> attribute labels from the
         # discovery exchange itself (Read By Group Type responses give service
@@ -717,18 +727,17 @@ def make_ble_protocol_handlers(client: TSharkClient) -> dict[str, ProtocolHandle
         service_ranges: list[tuple[int, int, str]] = []
         handle_labels: dict[str, str] = {}
         pending_rbt_type: str | None = None
-        for parts in parsed_rows:
-            opcode, _operation = _parse_opcode(_col(parts, 2))
+        for parts, opcode, _operation in parsed_rows:
             if opcode == "0x11":  # Read By Group Type Response: service table
-                starts = _split_handles(_col(parts, 3))
-                ends = _split_handles(_col(parts, 7))
+                starts = _split_handles(parts[3])
+                ends = _split_handles(parts[7])
                 # Request correlation injects the queried type (0x2800/0x2801) as a
                 # trailing uuid16 instance; drop it. 128-bit service UUIDs render
                 # into btatt.uuid128 instead of uuid16. Uncorrelated responses
                 # (synthetic captures) carry entry UUIDs in btatt.value as raw LE hex.
-                uuid128_list = _split_multivalue(_col(parts, 9))
-                uuid_display = [u for u in _split_multivalue(_col(parts, 8)) if u not in ("0x2800", "0x2801")]
-                uuid_value = _split_multivalue(_col(parts, 4))
+                uuid128_list = _split_multivalue(parts[9])
+                uuid_display = [u for u in _split_multivalue(parts[8]) if u not in ("0x2800", "0x2801")]
+                uuid_value = _split_multivalue(parts[4])
                 if uuid128_list:
                     uuid_pairs = [(u, f"0x{u}") for u in uuid128_list]
                 elif uuid_display:
@@ -747,8 +756,8 @@ def make_ble_protocol_handlers(client: TSharkClient) -> dict[str, ProtocolHandle
                     )
                     service_ranges.append((start, end, label))
             elif opcode == "0x05":  # Find Information Response: handle -> UUID
-                fit_handles = _split_handles(_col(parts, 3))
-                fit_uuids = _split_multivalue(_col(parts, 8))
+                fit_handles = _split_handles(parts[3])
+                fit_uuids = _split_multivalue(parts[8])
                 # Correlated renderings inject extra uuid16 instances (service /
                 # characteristic UUID lookups per handle), so the counts only match
                 # for clean single-entry responses. Pair only when they do; the
@@ -757,12 +766,12 @@ def make_ble_protocol_handlers(client: TSharkClient) -> dict[str, ProtocolHandle
                     for fit_handle, fit_uuid in zip(fit_handles, fit_uuids):
                         handle_labels.setdefault(f"0x{fit_handle:04x}", _uuid_label_from_display(fit_uuid))
             elif opcode == "0x08":  # Read By Type Request: remember the queried type
-                pending_rbt_type = _strip(_col(parts, 8)) or None
+                pending_rbt_type = _strip(parts[8]) or None
             elif opcode == "0x09" and pending_rbt_type == "0x2803":
                 # Read By Type Response to a Characteristic Declaration query:
                 # each entry value is properties(1) | value_handle(2) | uuid(2 or 16).
-                entry_handles = _split_handles(_col(parts, 3))
-                entry_values = _split_multivalue(_col(parts, 4))
+                entry_handles = _split_handles(parts[3])
+                entry_values = _split_multivalue(parts[4])
                 for _decl_handle, entry_value in zip(entry_handles, entry_values):
                     try:
                         raw = bytes.fromhex(entry_value)
@@ -785,25 +794,24 @@ def make_ble_protocol_handlers(client: TSharkClient) -> dict[str, ProtocolHandle
                 # Read By Type Response to a characteristic-UUID query: the entry
                 # handle itself is the value handle of the queried characteristic.
                 queried_label = _uuid_label_from_display(pending_rbt_type)
-                for entry_handle in _split_handles(_col(parts, 3)):
+                for entry_handle in _split_handles(parts[3]):
                     handle_labels.setdefault(f"0x{entry_handle:04x}", queried_label)
                 pending_rbt_type = None
 
         # Second pass: build the annotated timeline.
         timeline: list[dict[str, Any]] = []
         operation_counts: Counter[str] = Counter()
-        for parts in parsed_rows:
-            opcode, operation = _parse_opcode(_col(parts, 2))
-            frame_raw = _strip(_col(parts, 0))
+        for parts, opcode, operation in parsed_rows:
+            frame_raw = _strip(parts[0])
             frame = int(frame_raw) if frame_raw.isdigit() else None
             try:
                 time_value: float | None = float(_strip(_col(parts, 1)))
             except ValueError:
                 time_value = None
-            handle = _strip(_col(parts, 3)) or None
-            value = _strip(_col(parts, 4)) or None
-            handles_info = _strip(_col(parts, 5)) or None
-            cid = _strip(_col(parts, 6)) or None
+            handle = _strip(parts[3]) or None
+            value = _strip(parts[4]) or None
+            handles_info = _strip(parts[5]) or None
+            cid = _strip(parts[6]) or None
             attribute = handle_labels.get(handle) if handle else None
             service: str | None = None
             handle_ints = _split_handles(handle) if handle else []
@@ -856,166 +864,149 @@ def make_ble_protocol_handlers(client: TSharkClient) -> dict[str, ProtocolHandle
 
     async def ble_connections(pcap_file: str, limit: int = 100) -> str:
         """[Protocol] BLE connection lifecycle: HCI sessions per handle with link params, duration, disconnect reasons; over-the-air CONNECT_IND."""
-        hci_filter = "bthci_evt.code == 0x3e"
-        hci_result = await client.extract_fields(
+        # One tshark pass covers all three connection sources: reading the capture
+        # dominates the cost, so a single process beats three filtered passes.
+        conn_filter = "bthci_evt.code == 0x3e || bthci_evt.code == 0x05 || btle.advertising_header.pdu_type == 0x05"
+        result = await client.extract_fields(
             pcap_file,
             [
-                "frame.number",
-                "frame.time_relative",
-                "bthci_evt.le_meta_subevent",
-                "bthci_evt.connection_handle",
-                "bthci_evt.bd_addr",
-                "bthci_evt.le_peer_address_type",
-                "bthci_evt.le_con_interval",
-                "bthci_evt.le_con_latency",
-                "bthci_evt.le_supv_timeout",
-                "bthci_evt.status",
+                "frame.number",  # 0
+                "frame.time_relative",  # 1
+                "bthci_evt.code",  # 2  (HCI rows)
+                "bthci_evt.le_meta_subevent",  # 3
+                "bthci_evt.connection_handle",  # 4
+                "bthci_evt.bd_addr",  # 5
+                "bthci_evt.le_peer_address_type",  # 6
+                "bthci_evt.le_con_interval",  # 7
+                "bthci_evt.le_con_latency",  # 8
+                "bthci_evt.le_supv_timeout",  # 9
+                "bthci_evt.status",  # 10
+                "bthci_evt.reason",  # 11
+                "btle.advertising_header.pdu_type",  # 12 (over-the-air rows)
+                "btle.initiator_address",  # 13
+                "btle.advertising_address",  # 14
+                "btle.link_layer_data.access_address",  # 15
+                "btle.link_layer_data.crc_init",  # 16
+                "btle.link_layer_data.interval",  # 17
+                "btle.link_layer_data.timeout",  # 18
+                "btle.link_layer_data.channel_map",  # 19
             ],
-            display_filter=hci_filter,
+            display_filter=conn_filter,
             limit=limit,
         )
-        hci_wrapped = parse_tool_result(hci_result)
-        if not hci_wrapped["success"]:
-            return normalize_tool_result(hci_wrapped)
+        wrapped = parse_tool_result(result)
+        if not wrapped["success"]:
+            return normalize_tool_result(wrapped)
 
-        disc_filter = "bthci_evt.code == 0x05"
-        disc_result = await client.extract_fields(
-            pcap_file,
-            ["frame.number", "frame.time_relative", "bthci_evt.connection_handle", "bthci_evt.reason"],
-            display_filter=disc_filter,
-            limit=limit,
-        )
-        disc_wrapped = parse_tool_result(disc_result)
-        if not disc_wrapped["success"]:
-            return normalize_tool_result(disc_wrapped)
-
-        ota_filter = "btle.advertising_header.pdu_type == 0x05"
-        ota_result = await client.extract_fields(
-            pcap_file,
-            [
-                "frame.number",
-                "frame.time_relative",
-                "btle.initiator_address",
-                "btle.advertising_address",
-                "btle.link_layer_data.access_address",
-                "btle.link_layer_data.crc_init",
-                "btle.link_layer_data.interval",
-                "btle.link_layer_data.latency",
-                "btle.link_layer_data.timeout",
-                "btle.link_layer_data.channel_map",
-            ],
-            display_filter=ota_filter,
-            limit=limit,
-        )
-        ota_wrapped = parse_tool_result(ota_result)
-        if not ota_wrapped["success"]:
-            return normalize_tool_result(ota_wrapped)
-
-        hci_data = hci_wrapped.get("data", "")
-        disc_data = disc_wrapped.get("data", "")
-        ota_data = ota_wrapped.get("data", "")
+        data = wrapped.get("data", "")
         warnings: list[str] = []
-        truncated = (
-            hci_wrapped.get("truncated") is True
-            or disc_wrapped.get("truncated") is True
-            or ota_wrapped.get("truncated") is True
-        )
+        truncated = wrapped.get("truncated") is True
         if truncated:
-            warnings.append(f"One or more connection queries hit the limit of {limit}; counts are lower bounds.")
+            warnings.append(f"Connection rows hit the limit of {limit}; counts are lower bounds.")
 
-        # HCI side: group LE meta events by connection handle.
         sessions: dict[str, dict[str, Any]] = {}
-        update_events: list[tuple[str, dict[str, Any]]] = []
-        hci_rows = 0
-        if isinstance(hci_data, str) and hci_data.strip():
-            lines = hci_data.strip().splitlines()
+        ota_rows: list[dict[str, Any]] = []
+        reason_counts: Counter[str] = Counter()
+        rows = 0
+
+        if isinstance(data, str) and data.strip():
+            lines = data.strip().splitlines()
             start_idx = 1 if "frame.number" in lines[0] else 0
             for line in lines[start_idx:]:
-                parts = line.split("\t")
-                if len(parts) < 4:
-                    continue
-                handle = _strip(_col(parts, 3))
-                if not handle:
-                    continue
-                hci_rows += 1
-                subevent = _strip(_col(parts, 2))
-                frame_raw = _strip(_col(parts, 0))
-                frame = int(frame_raw) if frame_raw.isdigit() else None
-                try:
-                    time_value = float(_strip(_col(parts, 1)))
-                except ValueError:
-                    time_value = None
-                entry: dict[str, Any] = {
-                    "handle": handle,
-                    "frame": frame,
-                    "time": time_value,
-                    "subevent": subevent,
-                }
-                # 0x01 LE Connection Complete, 0x0a Enhanced V1, 0x29 Enhanced V2
-                # (5.3 controllers like Zephyr SDC report the V2 event).
-                if subevent in ("0x01", "0x0a", "0x29"):
-                    entry.update(
+                parts = _pad(line.split("\t"), 20)
+                rows += 1
+                code = _strip(parts[2])
+                if code == "0x3e":  # HCI LE meta: connection complete or parameter update
+                    handle = _strip(parts[4])
+                    if not handle:
+                        continue
+                    subevent = _strip(parts[3])
+                    frame_raw = _strip(parts[0])
+                    frame = int(frame_raw) if frame_raw.isdigit() else None
+                    try:
+                        time_value: float | None = float(_strip(parts[1]))
+                    except ValueError:
+                        time_value = None
+                    # 0x01 LE Connection Complete, 0x0a Enhanced V1, 0x29 Enhanced V2
+                    # (5.3 controllers like Zephyr SDC report the V2 event).
+                    if subevent in ("0x01", "0x0a", "0x29"):
+                        interval_raw = _strip(parts[7])
+                        timeout_raw = _strip(parts[9])
+                        entry = {
+                            "handle": handle,
+                            "frame": frame,
+                            "time": time_value,
+                            "subevent": subevent,
+                            "peer_address": _strip(parts[5]) or None,
+                            "peer_address_type": _strip(parts[6]) or None,
+                            "interval": interval_raw or None,
+                            "interval_ms": round(int(interval_raw) * 1.25, 2) if interval_raw.isdigit() else None,
+                            "latency": _strip(parts[8]) or None,
+                            "supervision_timeout": timeout_raw or None,
+                            "supervision_timeout_ms": int(timeout_raw) * 10 if timeout_raw.isdigit() else None,
+                            "status": _strip(parts[10]) or None,
+                        }
+                        if handle not in sessions:
+                            sessions[handle] = {"connect": None, "updates": [], "disconnect": None}
+                        sessions[handle]["connect"] = entry
+                    elif subevent == "0x03":  # LE Connection Update Complete
+                        update_interval = _strip(parts[7])
+                        update = {
+                            "frame": frame,
+                            "time": time_value,
+                            "interval": update_interval or None,
+                            "latency": _strip(parts[8]) or None,
+                            "supervision_timeout": _strip(parts[9]) or None,
+                            "interval_ms": round(int(update_interval) * 1.25, 2) if update_interval.isdigit() else None,
+                        }
+                        if handle not in sessions:
+                            sessions[handle] = {"connect": None, "updates": [], "disconnect": None}
+                        sessions[handle]["updates"].append(update)
+                elif code == "0x05":  # HCI Disconnect Complete: reason attribution
+                    handle = _strip(parts[4])
+                    if not handle:
+                        continue
+                    reason_name = _reason_name(parts[11])
+                    reason_counts[reason_name] += 1
+                    try:
+                        time_value = float(_strip(parts[1]))
+                    except ValueError:
+                        time_value = None
+                    if handle not in sessions:
+                        sessions[handle] = {"connect": None, "updates": [], "disconnect": None}
+                    session = sessions[handle]
+                    session["disconnect"] = {"reason": reason_name, "time": time_value}
+                    connect_time = session["connect"]["time"] if session["connect"] else None
+                    if connect_time is not None and time_value is not None:
+                        session["session_duration_s"] = round(time_value - connect_time, 6)
+                elif _strip(parts[12]) == "0x05":  # over-the-air CONNECT_IND
+                    initiator = _strip(parts[13])
+                    advertiser = _strip(parts[14])
+                    if not initiator and not advertiser:
+                        continue
+                    frame_raw = _strip(parts[0])
+                    frame = int(frame_raw) if frame_raw.isdigit() else None
+                    try:
+                        time_value = float(_strip(parts[1]))
+                    except ValueError:
+                        time_value = None
+                    interval_raw = _strip(parts[17])
+                    timeout_raw = _strip(parts[18])
+                    ota_rows.append(
                         {
-                            "peer_address": _strip(_col(parts, 4)) or None,
-                            "peer_address_type": _strip(_col(parts, 5)) or None,
-                            "interval": _strip(_col(parts, 6)) or None,
-                            "interval_ms": None,
-                            "latency": _strip(_col(parts, 7)) or None,
-                            "supervision_timeout": _strip(_col(parts, 8)) or None,
-                            "supervision_timeout_ms": None,
-                            "status": _strip(_col(parts, 9)) or None,
+                            "frame": frame,
+                            "time": time_value,
+                            "initiator_address": initiator or None,
+                            "advertiser_address": advertiser or None,
+                            "access_address": _strip(parts[15]) or None,
+                            "crc_init": _strip(parts[16]) or None,
+                            "interval": interval_raw or None,
+                            "interval_ms": round(int(interval_raw) * 1.25, 2) if interval_raw.isdigit() else None,
+                            "timeout": timeout_raw or None,
+                            "timeout_ms": int(timeout_raw) * 10 if timeout_raw.isdigit() else None,
+                            "channel_map": _strip(parts[19]) or None,
                         }
                     )
-                    interval_raw = entry.get("interval")
-                    if interval_raw and interval_raw.isdigit():
-                        entry["interval_ms"] = round(int(interval_raw) * 1.25, 2)
-                    timeout_raw = entry.get("supervision_timeout")
-                    if timeout_raw and timeout_raw.isdigit():
-                        entry["supervision_timeout_ms"] = int(timeout_raw) * 10
-                    sessions.setdefault(handle, {"connect": None, "updates": []})["connect"] = entry
-                elif subevent == "0x03":  # LE Connection Update Complete
-                    update: dict[str, Any] = {
-                        "frame": frame,
-                        "time": time_value,
-                        "interval": _strip(_col(parts, 6)) or None,
-                        "latency": _strip(_col(parts, 7)) or None,
-                        "supervision_timeout": _strip(_col(parts, 8)) or None,
-                    }
-                    if update["interval"] and str(update["interval"]).isdigit():
-                        update["interval_ms"] = round(int(update["interval"]) * 1.25, 2)
-                    else:
-                        update["interval_ms"] = None
-                    update_events.append((handle, update))
-
-        for handle, update in update_events:
-            if handle in sessions:
-                sessions[handle]["updates"].append(update)
-
-        # HCI disconnects: attach reason + session duration to each handle.
-        reason_counts: Counter[str] = Counter()
-        disc_rows = 0
-        if isinstance(disc_data, str) and disc_data.strip():
-            lines = disc_data.strip().splitlines()
-            start_idx = 1 if "frame.number" in lines[0] else 0
-            for line in lines[start_idx:]:
-                parts = line.split("\t")
-                if len(parts) < 4:
-                    continue
-                handle = _strip(_col(parts, 2))
-                if not handle:
-                    continue
-                disc_rows += 1
-                reason_name = _reason_name(_col(parts, 3))
-                reason_counts[reason_name] += 1
-                try:
-                    time_value = float(_strip(_col(parts, 1)))
-                except ValueError:
-                    time_value = None
-                session = sessions.setdefault(handle, {"connect": None, "updates": []})
-                session["disconnect"] = {"reason": reason_name, "time": time_value}
-                connect_time = session["connect"]["time"] if session.get("connect") else None
-                if connect_time is not None and time_value is not None:
-                    session["session_duration_s"] = round(time_value - connect_time, 6)
 
         connection_rows: list[dict[str, Any]] = []
         for handle, session in sorted(sessions.items()):
@@ -1024,43 +1015,6 @@ def make_ble_protocol_handlers(client: TSharkClient) -> dict[str, ProtocolHandle
             row["disconnect"] = session.get("disconnect")
             row["session_duration_s"] = session.get("session_duration_s")
             connection_rows.append(row)
-
-        # Over-the-air side: CONNECT_IND frames carry LL-level session parameters.
-        ota_rows: list[dict[str, Any]] = []
-        if isinstance(ota_data, str) and ota_data.strip():
-            lines = ota_data.strip().splitlines()
-            start_idx = 1 if "frame.number" in lines[0] else 0
-            for line in lines[start_idx:]:
-                parts = line.split("\t")
-                if len(parts) < 4:
-                    continue
-                initiator = _strip(_col(parts, 2))
-                advertiser = _strip(_col(parts, 3))
-                if not initiator and not advertiser:
-                    continue
-                frame_raw = _strip(_col(parts, 0))
-                frame = int(frame_raw) if frame_raw.isdigit() else None
-                try:
-                    time_value = float(_strip(_col(parts, 1)))
-                except ValueError:
-                    time_value = None
-                interval_raw = _strip(_col(parts, 6))
-                timeout_raw = _strip(_col(parts, 8))
-                ota_rows.append(
-                    {
-                        "frame": frame,
-                        "time": time_value,
-                        "initiator_address": initiator or None,
-                        "advertiser_address": advertiser or None,
-                        "access_address": _strip(_col(parts, 4)) or None,
-                        "crc_init": _strip(_col(parts, 5)) or None,
-                        "interval": interval_raw or None,
-                        "interval_ms": round(int(interval_raw) * 1.25, 2) if interval_raw.isdigit() else None,
-                        "timeout": timeout_raw or None,
-                        "timeout_ms": int(timeout_raw) * 10 if timeout_raw.isdigit() else None,
-                        "channel_map": _strip(_col(parts, 9)) or None,
-                    }
-                )
 
         if not connection_rows and not ota_rows:
             return envelope_response(
@@ -1073,8 +1027,16 @@ def make_ble_protocol_handlers(client: TSharkClient) -> dict[str, ProtocolHandle
                         "events; over-the-air captures expose CONNECT_IND frames."
                     ),
                 },
-                scope={"pcap_file": pcap_file, "filters": [hci_filter, disc_filter, ota_filter]},
-                coverage={"status": "complete", "hci_rows": 0, "disconnect_rows": 0, "ota_rows": 0, "limit": limit},
+                scope={"pcap_file": pcap_file, "filters": [conn_filter]},
+                coverage={
+                    "status": "partial" if truncated else "complete",
+                    "connection_rows": 0,
+                    "sessions": 0,
+                    "ota_rows": 0,
+                    "limit": limit,
+                },
+                truncated=truncated or None,
+                warnings=warnings or None,
             )
 
         summary_lines: list[str] = []
@@ -1111,11 +1073,11 @@ def make_ble_protocol_handlers(client: TSharkClient) -> dict[str, ProtocolHandle
                 "reason_summary": dict(reason_counts),
                 "summary": "\n".join(summary_lines),
             },
-            scope={"pcap_file": pcap_file, "filters": [hci_filter, disc_filter, ota_filter]},
+            scope={"pcap_file": pcap_file, "filters": [conn_filter]},
             coverage={
                 "status": "partial" if truncated else "complete",
-                "hci_rows": hci_rows,
-                "disconnect_rows": disc_rows,
+                "connection_rows": rows,
+                "sessions": len(connection_rows),
                 "ota_rows": len(ota_rows),
                 "limit": limit,
             },

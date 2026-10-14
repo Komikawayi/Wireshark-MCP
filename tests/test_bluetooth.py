@@ -382,15 +382,16 @@ class TestGattLabelResolution:
 
 
 class TestBleConnectionsContract:
-    """Field and filter contract for the connection lifecycle tool."""
+    """Field and filter contract for the connection lifecycle handler."""
 
     @pytest.mark.asyncio
-    async def test_queries_connection_events(self, mock_client: MockTSharkClient) -> None:
-        await mock_client.extract_fields(
+    async def test_queries_connection_events_in_one_pass(self, mock_client: MockTSharkClient) -> None:
+        result = await mock_client.extract_fields(
             "test.pcap",
             [
                 "frame.number",
                 "frame.time_relative",
+                "bthci_evt.code",
                 "bthci_evt.le_meta_subevent",
                 "bthci_evt.connection_handle",
                 "bthci_evt.bd_addr",
@@ -399,18 +400,59 @@ class TestBleConnectionsContract:
                 "bthci_evt.le_con_latency",
                 "bthci_evt.le_supv_timeout",
                 "bthci_evt.status",
+                "bthci_evt.reason",
+                "btle.advertising_header.pdu_type",
+                "btle.initiator_address",
+                "btle.advertising_address",
+                "btle.link_layer_data.access_address",
+                "btle.link_layer_data.crc_init",
+                "btle.link_layer_data.interval",
+                "btle.link_layer_data.timeout",
+                "btle.link_layer_data.channel_map",
             ],
-            display_filter="bthci_evt.code == 0x3e",
+            display_filter="bthci_evt.code == 0x3e || bthci_evt.code == 0x05 || btle.advertising_header.pdu_type == 0x05",
             limit=100,
         )
-        result = await mock_client.extract_fields(
-            "test.pcap",
-            ["frame.number", "frame.time_relative", "bthci_evt.connection_handle", "bthci_evt.reason"],
-            display_filter="bthci_evt.code == 0x05",
-            limit=100,
+        # One tshark pass covers all three connection sources; every column family is present.
+        for field in ("bthci_evt.reason", "bthci_evt.le_meta_subevent", "btle.initiator_address"):
+            assert f"-e {field}" in result
+        assert (
+            "-Y bthci_evt.code == 0x3e || bthci_evt.code == 0x05 || btle.advertising_header.pdu_type == 0x05" in result
         )
-        assert "-e bthci_evt.reason" in result
-        assert "-Y bthci_evt.code == 0x05" in result
+
+
+CONN_HEADER = (
+    "frame.number\tframe.time_relative\tbthci_evt.code\tbthci_evt.le_meta_subevent\t"
+    "bthci_evt.connection_handle\tbthci_evt.bd_addr\tbthci_evt.le_peer_address_type\t"
+    "bthci_evt.le_con_interval\tbthci_evt.le_con_latency\tbthci_evt.le_supv_timeout\t"
+    "bthci_evt.status\tbthci_evt.reason\tbtle.advertising_header.pdu_type\tbtle.initiator_address\t"
+    "btle.advertising_address\tbtle.link_layer_data.access_address\tbtle.link_layer_data.crc_init\t"
+    "btle.link_layer_data.interval\tbtle.link_layer_data.timeout\tbtle.link_layer_data.channel_map"
+)
+
+
+def _conn_row(frame: str, time: str, **cols: str) -> str:
+    """Build a single 20-column row for the merged connection query."""
+    cells = {str(i): "" for i in range(20)}
+    cells[0], cells[1], cells[2] = frame, time, cols.get("code", "")
+    cells[3] = cols.get("subevent", "")
+    cells[4] = cols.get("handle", "")
+    cells[5] = cols.get("bd_addr", "")
+    cells[6] = cols.get("peer_type", "")
+    cells[7] = cols.get("interval", "")
+    cells[8] = cols.get("latency", "")
+    cells[9] = cols.get("timeout", "")
+    cells[10] = cols.get("status", "")
+    cells[11] = cols.get("reason", "")
+    cells[12] = cols.get("pdu_type", "")
+    cells[13] = cols.get("initiator", "")
+    cells[14] = cols.get("advertiser", "")
+    cells[15] = cols.get("access_address", "")
+    cells[16] = cols.get("crc_init", "")
+    cells[17] = cols.get("ll_interval", "")
+    cells[18] = cols.get("ll_timeout", "")
+    cells[19] = cols.get("channel_map", "")
+    return "\t".join(cells[i] for i in range(20))
 
 
 class TestBleConnectionsSemantics:
@@ -419,25 +461,36 @@ class TestBleConnectionsSemantics:
     @pytest.mark.asyncio
     async def test_full_session_with_reason_attribution(self) -> None:
         mock_client = AsyncMock()
-        connect_rows = [
-            "frame.number\tframe.time_relative\tbthci_evt.le_meta_subevent\tbthci_evt.connection_handle\t"
-            "bthci_evt.bd_addr\tbthci_evt.le_peer_address_type\tbthci_evt.le_con_interval\t"
-            "bthci_evt.le_con_latency\tbthci_evt.le_supv_timeout\tbthci_evt.status",
-            "1\t0.000000\t0x01\t0x000c\t80:a9:97:23:9b:44\t0x00\t24\t0\t72\t0x00",
-            "17\t0.160000\t0x03\t0x000c\t\t\t42\t0\t600\t",
+        rows = [
+            CONN_HEADER,
+            _conn_row(
+                "1",
+                "0.000000",
+                code="0x3e",
+                subevent="0x01",
+                handle="0x000c",
+                bd_addr="80:a9:97:23:9b:44",
+                peer_type="0x00",
+                interval="24",
+                latency="0",
+                timeout="72",
+                status="0x00",
+            ),
+            _conn_row(
+                "17",
+                "0.160000",
+                code="0x3e",
+                subevent="0x03",
+                handle="0x000c",
+                interval="42",
+                latency="0",
+                timeout="600",
+            ),
+            _conn_row("18", "0.170000", code="0x05", handle="0x000c", reason="0x13"),
         ]
-        disconnect_rows = [
-            "frame.number\tframe.time_relative\tbthci_evt.connection_handle\tbthci_evt.reason",
-            "18\t0.170000\t0x000c\t0x13",
-        ]
-        mock_client.extract_fields.side_effect = [
-            success_response("\n".join(connect_rows)),
-            success_response("\n".join(disconnect_rows)),
-            success_response(""),  # no over-the-air CONNECT_IND in an HCI capture
-        ]
+        mock_client.extract_fields.return_value = success_response("\n".join(rows))
 
-        handlers = make_ble_protocol_handlers(mock_client)
-        parsed = parse_tool_result(await handlers["ble_connections"]("test.pcap"))
+        parsed = parse_tool_result(await make_ble_protocol_handlers(mock_client)["ble_connections"]("test.pcap"))
 
         assert parsed["success"] is True
         connections = parsed["data"]["connections"]
@@ -455,22 +508,26 @@ class TestBleConnectionsSemantics:
         assert "Remote User Terminated Connection" in parsed["data"]["summary"]
 
     @pytest.mark.asyncio
-    async def test_over_the_air_connect_ind(self) -> None:
+    async def test_over_the_air_connect_ind_in_same_pass(self) -> None:
         mock_client = AsyncMock()
-        ota_rows = [
-            "frame.number\tframe.time_relative\tbtle.initiator_address\tbtle.advertising_address\t"
-            "btle.link_layer_data.access_address\tbtle.link_layer_data.crc_init\tbtle.link_layer_data.interval\t"
-            "btle.link_layer_data.latency\tbtle.link_layer_data.timeout\tbtle.link_layer_data.channel_map",
-            "70\t10.300000\tf0:f1:f2:f3:f4:f5\t80:a9:97:23:9b:44\t0x556254e2\t0x7bc24d\t24\t0\t72\t0x1fffffffff",
+        rows = [
+            CONN_HEADER,
+            _conn_row(
+                "70",
+                "10.300000",
+                pdu_type="0x05",
+                initiator="f0:f1:f2:f3:f4:f5",
+                advertiser="80:a9:97:23:9b:44",
+                access_address="0x556254e2",
+                crc_init="0x7bc24d",
+                ll_interval="24",
+                ll_timeout="72",
+                channel_map="0x1fffffffff",
+            ),
         ]
-        mock_client.extract_fields.side_effect = [
-            success_response(""),  # no HCI events in an over-the-air capture
-            success_response(""),  # no HCI disconnects
-            success_response("\n".join(ota_rows)),
-        ]
+        mock_client.extract_fields.return_value = success_response("\n".join(rows))
 
-        handlers = make_ble_protocol_handlers(mock_client)
-        parsed = parse_tool_result(await handlers["ble_connections"]("test.pcap"))
+        parsed = parse_tool_result(await make_ble_protocol_handlers(mock_client)["ble_connections"]("test.pcap"))
 
         assert parsed["success"] is True
         ota = parsed["data"]["over_air_connects"]
@@ -484,14 +541,9 @@ class TestBleConnectionsSemantics:
     @pytest.mark.asyncio
     async def test_no_connection_activity(self) -> None:
         mock_client = AsyncMock()
-        mock_client.extract_fields.side_effect = [
-            success_response(""),
-            success_response(""),
-            success_response(""),
-        ]
+        mock_client.extract_fields.return_value = success_response("")
 
-        handlers = make_ble_protocol_handlers(mock_client)
-        parsed = parse_tool_result(await handlers["ble_connections"]("test.pcap"))
+        parsed = parse_tool_result(await make_ble_protocol_handlers(mock_client)["ble_connections"]("test.pcap"))
 
         assert parsed["success"] is True
         assert parsed["data"]["connections"] == []
@@ -502,20 +554,22 @@ class TestBleConnectionsSemantics:
         mock_client = AsyncMock()
         # LE Connection Complete with status 0x08 (Connection Timeout): the
         # attempt itself is data; it must not be dropped.
-        connect_rows = [
-            "frame.number\tframe.time_relative\tbthci_evt.le_meta_subevent\tbthci_evt.connection_handle\t"
-            "bthci_evt.bd_addr\tbthci_evt.le_peer_address_type\tbthci_evt.le_con_interval\t"
-            "bthci_evt.le_con_latency\tbthci_evt.le_supv_timeout\tbthci_evt.status",
-            "3\t0.150000\t0x01\t0x0005\t46:ba:e2:8e:02:f1\t0x01\t\t\t\t0x08",
+        rows = [
+            CONN_HEADER,
+            _conn_row(
+                "3",
+                "0.150000",
+                code="0x3e",
+                subevent="0x01",
+                handle="0x0005",
+                bd_addr="46:ba:e2:8e:02:f1",
+                peer_type="0x01",
+                status="0x08",
+            ),
         ]
-        mock_client.extract_fields.side_effect = [
-            success_response("\n".join(connect_rows)),
-            success_response(""),
-            success_response(""),
-        ]
+        mock_client.extract_fields.return_value = success_response("\n".join(rows))
 
-        handlers = make_ble_protocol_handlers(mock_client)
-        parsed = parse_tool_result(await handlers["ble_connections"]("test.pcap"))
+        parsed = parse_tool_result(await make_ble_protocol_handlers(mock_client)["ble_connections"]("test.pcap"))
 
         connections = parsed["data"]["connections"]
         assert len(connections) == 1
@@ -525,14 +579,9 @@ class TestBleConnectionsSemantics:
     @pytest.mark.asyncio
     async def test_truncated_queries_warn_lower_bounds(self) -> None:
         mock_client = AsyncMock()
-        mock_client.extract_fields.side_effect = [
-            envelope_response("1\t0.000000\t0x01\t0x000c", truncated=True),
-            success_response(""),
-            success_response(""),
-        ]
+        mock_client.extract_fields.return_value = envelope_response("1\t0.000000\t0x3e", truncated=True)
 
-        handlers = make_ble_protocol_handlers(mock_client)
-        parsed = parse_tool_result(await handlers["ble_connections"]("test.pcap"))
+        parsed = parse_tool_result(await make_ble_protocol_handlers(mock_client)["ble_connections"]("test.pcap"))
 
         assert parsed["coverage"]["status"] == "partial"
         assert any("lower bounds" in w for w in parsed["warnings"])
@@ -545,21 +594,26 @@ class TestBleConnectionsRealWorldShapes:
     async def test_enhanced_connection_complete_v2_subevent(self) -> None:
         mock_client = AsyncMock()
         # Zephyr SDC (Bluetooth 5.3) reports LE Enhanced Connection Complete V2,
-        # which tshark renders as subevent 0x29 — not the textbook 0x01.
-        connect_rows = [
-            "frame.number\tframe.time_relative\tbthci_evt.le_meta_subevent\tbthci_evt.connection_handle\t"
-            "bthci_evt.bd_addr\tbthci_evt.le_peer_address_type\tbthci_evt.le_con_interval\t"
-            "bthci_evt.le_con_latency\tbthci_evt.le_supv_timeout\tbthci_evt.status",
-            "2\t0.137000\t0x29\t0x0020\tfc:de:c5:ae:c4:d6\t0x00\t24\t0\t72\t0x00",
+        # which tshark renders as subevent 0x29 - not the textbook 0x01.
+        rows = [
+            CONN_HEADER,
+            _conn_row(
+                "2",
+                "0.137000",
+                code="0x3e",
+                subevent="0x29",
+                handle="0x0020",
+                bd_addr="fc:de:c5:ae:c4:d6",
+                peer_type="0x00",
+                interval="24",
+                latency="0",
+                timeout="72",
+                status="0x00",
+            ),
         ]
-        mock_client.extract_fields.side_effect = [
-            success_response("\n".join(connect_rows)),
-            success_response(""),
-            success_response(""),
-        ]
+        mock_client.extract_fields.return_value = success_response("\n".join(rows))
 
-        handlers = make_ble_protocol_handlers(mock_client)
-        parsed = parse_tool_result(await handlers["ble_connections"]("test.pcap"))
+        parsed = parse_tool_result(await make_ble_protocol_handlers(mock_client)["ble_connections"]("test.pcap"))
 
         connections = parsed["data"]["connections"]
         assert len(connections) == 1
