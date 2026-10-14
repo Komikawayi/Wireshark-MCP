@@ -748,3 +748,39 @@ class TestBlePairingSemantics:
         assert parsed["success"] is True
         assert parsed["data"]["timeline"] == []
         assert "No BLE pairing" in parsed["data"]["summary"]
+
+
+class TestGattLabelVersionShapes:
+    """Older tshark (<4.4) renders declarations as structured fields, not raw bytes."""
+
+    @pytest.mark.asyncio
+    async def test_declaration_structured_fields_older_tshark(self) -> None:
+        mock_client = AsyncMock()
+        # tshark 4.2 shape (the Linux CI runner): btatt.value stays empty, the
+        # value handle reuses btatt.handle (decl + value_handle per entry), and
+        # the characteristic UUID arrives in btatt.characteristic_uuid16.
+        rows = [
+            GATT_HEADER,
+            "10\t0.080000\t0x08\t\t\t\t0x0004\t\t0x2803",
+            "11\t0.090000\t0x09\t0x000d,0x000e\t\t\t0x0004\t\t\t\t0x2a19\t",
+        ]
+        mock_client.extract_fields.return_value = success_response("\n".join(rows))
+
+        parsed = parse_tool_result(await make_ble_protocol_handlers(mock_client)["ble_gatt_timeline"]("test.pcap"))
+
+        assert parsed["data"]["handle_map"]["0x000e"] == "Battery Level (0x2a19)"
+
+    @pytest.mark.asyncio
+    async def test_declaration_structured_128bit_older_tshark(self) -> None:
+        mock_client = AsyncMock()
+        uuid128 = "1234567890abcdef1234567890abcdef"
+        rows = [
+            GATT_HEADER,
+            "10\t0.080000\t0x08\t\t\t\t0x0004\t\t0x2803",
+            f"11\t0.090000\t0x09\t0x000d,0x000e\t\t\t0x0004\t\t\t\t\t{uuid128}",
+        ]
+        mock_client.extract_fields.return_value = success_response("\n".join(rows))
+
+        parsed = parse_tool_result(await make_ble_protocol_handlers(mock_client)["ble_gatt_timeline"]("test.pcap"))
+
+        assert parsed["data"]["handle_map"]["0x000e"] == f"0x{uuid128}"

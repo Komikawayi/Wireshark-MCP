@@ -673,6 +673,8 @@ def make_ble_protocol_handlers(client: TSharkClient) -> dict[str, ProtocolHandle
                 "btatt.group_end_handle",
                 "btatt.uuid16",
                 "btatt.uuid128",
+                "btatt.characteristic_uuid16",
+                "btatt.characteristic_uuid128",
             ],
             display_filter="btatt",
             limit=limit,
@@ -713,8 +715,8 @@ def make_ble_protocol_handlers(client: TSharkClient) -> dict[str, ProtocolHandle
             parts = line.split("\t")
             if len(parts) < 3:  # need frame, time, opcode
                 continue
-            if len(parts) < 10:
-                parts.extend([""] * (10 - len(parts)))
+            if len(parts) < 12:
+                parts.extend([""] * (12 - len(parts)))
             opcode, operation = _parse_opcode(parts[2])
             parsed_rows.append((parts, opcode, operation))
 
@@ -767,27 +769,39 @@ def make_ble_protocol_handlers(client: TSharkClient) -> dict[str, ProtocolHandle
             elif opcode == "0x08":  # Read By Type Request: remember the queried type
                 pending_rbt_type = _strip(parts[8]) or None
             elif opcode == "0x09" and pending_rbt_type == "0x2803":
-                # Read By Type Response to a Characteristic Declaration query:
-                # each entry value is properties(1) | value_handle(2) | uuid(2 or 16).
+                # Read By Type Response to a Characteristic Declaration query.
+                # tshark 4.6+ renders each entry as raw bytes in btatt.value:
+                # properties(1) | value_handle(2) | uuid(2 or 16). Older releases
+                # (the Linux CI's 4.2) render structured fields instead: the value
+                # handle reuses btatt.handle (handles arrive as [decl, value_handle]
+                # per entry) and the UUID arrives in btatt.characteristic_uuid16/128.
                 entry_handles = _split_handles(parts[3])
                 entry_values = _split_multivalue(parts[4])
-                for _decl_handle, entry_value in zip(entry_handles, entry_values, strict=False):
-                    try:
-                        raw = bytes.fromhex(entry_value)
-                    except ValueError:
-                        continue
-                    if len(raw) < 5:
-                        continue
-                    value_handle = int.from_bytes(raw[1:3], "little")
-                    if len(raw) >= 19:  # 128-bit UUID
-                        uuid_int = int.from_bytes(raw[3:19], "little")
-                        handle_labels[f"0x{value_handle:04x}"] = f"0x{uuid_int:032x}"
-                    else:
-                        uuid_int = int.from_bytes(raw[3:5], "little")
-                        name = UUID_NAMES.get(uuid_int)
-                        handle_labels[f"0x{value_handle:04x}"] = (
-                            f"{name} (0x{uuid_int:04x})" if name else f"0x{uuid_int:04x}"
-                        )
+                if entry_values:
+                    for _decl_handle, entry_value in zip(entry_handles, entry_values, strict=False):
+                        try:
+                            raw = bytes.fromhex(entry_value)
+                        except ValueError:
+                            continue
+                        if len(raw) < 5:
+                            continue
+                        value_handle = int.from_bytes(raw[1:3], "little")
+                        if len(raw) >= 19:  # 128-bit UUID
+                            uuid_int = int.from_bytes(raw[3:19], "little")
+                            handle_labels[f"0x{value_handle:04x}"] = f"0x{uuid_int:032x}"
+                        else:
+                            uuid_int = int.from_bytes(raw[3:5], "little")
+                            name = UUID_NAMES.get(uuid_int)
+                            handle_labels[f"0x{value_handle:04x}"] = (
+                                f"{name} (0x{uuid_int:04x})" if name else f"0x{uuid_int:04x}"
+                            )
+                else:
+                    char_uuids = _split_multivalue(parts[11]) or _split_multivalue(parts[10])
+                    for value_handle, char_uuid in zip(entry_handles[1::2], char_uuids, strict=False):
+                        if char_uuid.startswith("0x"):
+                            handle_labels[f"0x{value_handle:04x}"] = _uuid_label_from_display(char_uuid)
+                        else:
+                            handle_labels[f"0x{value_handle:04x}"] = f"0x{char_uuid}"
                 pending_rbt_type = None
             elif opcode == "0x09" and pending_rbt_type is not None:
                 # Read By Type Response to a characteristic-UUID query: the entry
