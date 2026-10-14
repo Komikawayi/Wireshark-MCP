@@ -784,3 +784,22 @@ class TestGattLabelVersionShapes:
         parsed = parse_tool_result(await make_ble_protocol_handlers(mock_client)["ble_gatt_timeline"]("test.pcap"))
 
         assert parsed["data"]["handle_map"]["0x000e"] == f"0x{uuid128}"
+
+    @pytest.mark.asyncio
+    async def test_declaration_structured_fields_skip_correlated_duplicates(self) -> None:
+        mock_client = AsyncMock()
+        # tshark 4.6 request correlation duplicates the queried uuid into
+        # characteristic_uuid16 ("0x2a00,0x2a00" for a two-entry response covering
+        # different characteristics); pairing those would mislabel handles, so the
+        # structured-field path must stay silent on duplicated uuid instances.
+        rows = [
+            GATT_HEADER,
+            "10\t0.080000\t0x08\t\t\t\t0x0004\t\t0x2803",
+            "11\t0.090000\t0x09\t0x0002,0x0003,0x0004,0x0005\t\t\t0x0004\t\t\t\t0x2a00,0x2a00\t",
+        ]
+        mock_client.extract_fields.return_value = success_response("\n".join(rows))
+
+        parsed = parse_tool_result(await make_ble_protocol_handlers(mock_client)["ble_gatt_timeline"]("test.pcap"))
+
+        assert "0x0003" not in parsed["data"]["handle_map"]
+        assert "0x0005" not in parsed["data"]["handle_map"]
