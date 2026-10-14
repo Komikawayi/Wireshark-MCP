@@ -14,9 +14,12 @@
   labels resolved from the discovery exchange itself), and `ble_connections`
   (connection lifecycle: HCI sessions per handle with link parameters, parameter
   updates, session duration, HCI error-code attribution on disconnects, plus
-  over-the-air CONNECT_IND frames with LL parameters). `wireshark_open_file`
-  recommends these values with their `protocol` argument for captures containing
-  `btle`, `btatt`, `bthci_acl`, `bthci_evt`, or `bthci_cmd`.
+  over-the-air CONNECT_IND frames with LL parameters), and `ble_pairing`
+  (SMP exchange timeline, LE pairing-method inference — Just Works gets a
+  low-severity finding — distributed key material with LTK/EDIV/IRK values,
+  and SMP failure reason attribution). `wireshark_open_file` recommends
+  these values with their `protocol` argument for captures containing `btle`,
+  `btatt`, `btsmp`, `bthci_acl`, `bthci_evt`, or `bthci_cmd`.
 
 ## Fixed
 

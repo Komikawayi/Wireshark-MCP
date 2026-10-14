@@ -30,6 +30,7 @@ Protocol = Literal[
     "ble_connections",
     "ble_devices",
     "ble_gatt_timeline",
+    "ble_pairing",
     "ble_scan_activity",
     "coap",
     "dhcp",
@@ -77,7 +78,7 @@ def make_analyze_tools(client: TSharkClient) -> list[tuple[str, Any]]:
     }
 
     async def wireshark_analyze_protocol(pcap_file: str, protocol: Protocol, limit: int = 100) -> str:
-        """[Protocol] Analyze one protocol with preset fields and filter. Returns a summary and bounded rows; BLE values add device inventory, scanners, GATT timeline, connection lifecycle."""
+        """[Protocol] Analyze one protocol with preset fields and filter. Returns a summary and bounded rows; BLE values add device inventory, scanners, GATT timeline, connection lifecycle, pairing."""
         handler = handlers.get(protocol)
         if handler is None:
             return error_response(

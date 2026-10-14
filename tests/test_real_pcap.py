@@ -345,3 +345,34 @@ async def test_real_pcap_truncated_capture_returns_partial_rows_with_warning(pca
     assert tool_result["success"] is True
     finding = tool_result["data"]["findings"][0]
     assert finding["severity"] == "info"  # one clean query is no tunneling signal
+
+
+@pytest.mark.asyncio
+async def test_real_pcap_ble_pairing(pcap_fixtures: dict[str, str]) -> None:
+    client = TSharkClient()
+    handlers = make_ble_protocol_handlers(client)
+    parsed = parse_tool_result(await handlers["ble_pairing"](pcap_fixtures["ble_pairing"], limit=50))
+
+    assert parsed["success"] is True
+    data = parsed["data"]
+    assert [e["operation"] for e in data["timeline"]] == [
+        "Pairing Request",
+        "Pairing Response",
+        "Pairing Confirm",
+        "Pairing Random",
+        "Encryption Information",
+        "Master Identification",
+        "Identity Information",
+        "Identity Address Information",
+        "Signing Information",
+    ]
+    assert data["pairing_method"]["method"] == "Just Works"
+    assert data["pairing_method"]["note"] == "no MITM protection requested"
+    key_material = data["key_material"]
+    assert key_material["ltk"] == "2b7d1c4e9f0a3d685e214a7c0fd8b649"
+    assert key_material["ediv"] == "0x3412"  # fixture bytes 12 34 rendered little-endian
+    assert "irk" in key_material
+    finding = data["findings"][0]
+    assert finding["severity"] == "low"
+    assert finding["confidence"] == "likely"
+    assert "Just Works" in data["summary"]

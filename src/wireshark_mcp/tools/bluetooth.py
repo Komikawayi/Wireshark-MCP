@@ -160,6 +160,113 @@ def _reason_name(raw: str) -> str:
     return f"{REASON_CODES.get(code, 'Unknown error code')} ({value})"
 
 
+# SMP (Security Manager Protocol) opcodes as rendered in btsmp.opcode.
+SMP_OPCODE_NAMES: dict[int, str] = {
+    0x01: "Pairing Request",
+    0x02: "Pairing Response",
+    0x03: "Pairing Confirm",
+    0x04: "Pairing Random",
+    0x05: "Pairing Failed",
+    0x06: "Encryption Information",
+    0x07: "Master Identification",
+    0x08: "Identity Information",
+    0x09: "Identity Address Information",
+    0x0A: "Signing Information",
+    0x0B: "Security Request",
+    0x0C: "Pairing Public Key",
+    0x0D: "Pairing DHKey Check",
+    0x0E: "Keypress Notification",
+}
+
+SMP_IO_CAP_NAMES: dict[int, str] = {
+    0x00: "DisplayOnly",
+    0x01: "DisplayYesNo",
+    0x02: "KeyboardOnly",
+    0x03: "NoInputNoOutput",
+    0x04: "KeyboardDisplay",
+}
+
+# btsmp.reason values carried on Pairing Failed (SMP error codes).
+SMP_FAIL_REASONS: dict[int, str] = {
+    0x01: "Passkey Entry Failed",
+    0x02: "OOB Not Available",
+    0x03: "Authentication Requirements Not Met",
+    0x04: "Confirm Value Failed",
+    0x05: "Pairing Not Supported",
+    0x06: "Encryption Key Size Not Acceptable",
+    0x07: "Command Not Supported",
+    0x08: "Unspecified Reason",
+    0x09: "Repeated Attempts",
+    0x0A: "Invalid Parameters",
+    0x0B: "DHKey Check Failed",
+    0x0C: "Numeric Comparison Failed",
+    0x0D: "BR/EDR Pairing In Progress",
+    0x0E: "CSRK Not Supported",
+}
+
+
+def _smp_io_cap_name(raw: str) -> str:
+    value = _strip(raw)
+    try:
+        return SMP_IO_CAP_NAMES.get(int(value, 16), value)
+    except ValueError:
+        return value
+
+
+def _smp_fail_reason(raw: str) -> str:
+    value = _strip(raw)
+    try:
+        return f"{SMP_FAIL_REASONS.get(int(value, 16), 'Unknown error code')} ({value})"
+    except ValueError:
+        return value
+
+
+def _key_distribution(raw: str) -> list[str]:
+    """Expand a key-distribution flags byte (hex) into distributed key names."""
+    value = _strip(raw)
+    try:
+        flags = int(value, 16)
+    except ValueError:
+        return []
+    distributed = []
+    if flags & 0x01:
+        distributed.append("LTK (encryption)")
+    if flags & 0x02:
+        distributed.append("IRK + identity address")
+    if flags & 0x04:
+        distributed.append("CSRK (signing)")
+    return distributed
+
+
+def _infer_pairing_method(request: dict[str, Any] | None, response: dict[str, Any] | None) -> tuple[str, str]:
+    """Infer the LE pairing method from the request/response exchange.
+
+    Returns (method, note). Simplified from Vol 3 Part H Table 5.7; the note
+    carries the raw flags so a reviewer can re-check the inference.
+    """
+    if request is None or response is None:
+        return "unknown", "pairing request/response pair not both present in this capture"
+    if request["oob"] not in ("0x00", "") or response["oob"] not in ("0x00", ""):
+        return "OOB", "OOB data flag set"
+    mitm = request["mitm"] == "True" and response["mitm"] == "True"
+    if not mitm:
+        return "Just Works", "no MITM protection requested"
+    io_req, io_rsp = request["io_capability"], response["io_capability"]
+    displays = {"0x00", "0x01", "0x04"}
+    keyboards = {"0x02", "0x04"}
+    if (
+        io_req in ("0x01", "0x04")
+        and io_rsp in ("0x01", "0x04")
+        and (request["sc"] == "True" or response["sc"] == "True")
+    ):
+        return "Numeric Comparison", "MITM requested, both sides display-confirm capable, secure connections"
+    if (io_req in keyboards and io_rsp in displays) or (io_rsp in keyboards and io_req in displays):
+        return "Passkey Entry", "MITM requested, keyboard/display pairing"
+    if io_req == "0x03" or io_rsp == "0x03":
+        return "Just Works", "MITM requested but a side is NoInputNoOutput, so it degrades to Just Works"
+    return "Just Works", "MITM requested, IO capabilities fall back to Just Works"
+
+
 # Common Bluetooth assigned numbers for GATT services and characteristics.
 UUID_NAMES: dict[int, str] = {
     # Services
@@ -1016,9 +1123,194 @@ def make_ble_protocol_handlers(client: TSharkClient) -> dict[str, ProtocolHandle
             warnings=warnings or None,
         )
 
+    async def ble_pairing(pcap_file: str, limit: int = 100) -> str:
+        """[Protocol] BLE pairing analysis: SMP exchange timeline, pairing method inference, distributed key material (LTK/IRK/EDIV), failures."""
+        result = await client.extract_fields(
+            pcap_file,
+            [
+                "frame.number",
+                "frame.time_relative",
+                "btsmp.opcode",
+                "btsmp.io_capability",
+                "btsmp.oob_data_flags",
+                "btsmp.authreq",
+                "btsmp.mitm_flag",
+                "btsmp.sc_flag",
+                "btsmp.bonding_flags",
+                "btsmp.max_enc_key_size",
+                "btsmp.initiator_key_distribution",
+                "btsmp.responder_key_distribution",
+                "btsmp.reason",
+                "btsmp.long_term_key",
+                "btsmp.ediv",
+                "btsmp.id_resolving_key",
+            ],
+            display_filter="btsmp",
+            limit=limit,
+        )
+        wrapped = parse_tool_result(result)
+        if not wrapped["success"]:
+            return normalize_tool_result(wrapped)
+
+        data = wrapped.get("data", "")
+        warnings: list[str] = []
+        truncated = wrapped.get("truncated") is True
+        if truncated:
+            warnings.append(f"SMP timeline hit the limit of {limit} events; raise limit for the rest.")
+
+        if not isinstance(data, str) or not data.strip():
+            return envelope_response(
+                data={
+                    "timeline": [],
+                    "pairing_method": None,
+                    "key_material": {},
+                    "findings": [],
+                    "summary": f"{OK} No BLE pairing (SMP) traffic found in this capture.",
+                },
+                scope={"pcap_file": pcap_file, "filter": "btsmp"},
+                coverage={"status": "complete", "events": 0, "limit": limit},
+            )
+
+        lines = data.strip().splitlines()
+        start_idx = 1 if "frame.number" in lines[0] else 0
+
+        timeline: list[dict[str, Any]] = []
+        pairing_request: dict[str, Any] | None = None
+        pairing_response: dict[str, Any] | None = None
+        key_material: dict[str, Any] = {}
+        failures: list[dict[str, Any]] = []
+        for line in lines[start_idx:]:
+            parts = line.split("\t")
+            if len(parts) < 3:
+                continue
+            # SMP opcodes share the byte space with ATT but have their own table.
+            opcode = _strip(_col(parts, 2))
+            try:
+                operation = SMP_OPCODE_NAMES.get(int(opcode, 16), f"Unknown ({opcode})")
+            except ValueError:
+                operation = f"Unknown ({opcode})"
+            frame_raw = _strip(_col(parts, 0))
+            frame = int(frame_raw) if frame_raw.isdigit() else None
+            try:
+                time_value: float | None = float(_strip(_col(parts, 1)))
+            except ValueError:
+                time_value = None
+            event: dict[str, Any] = {"frame": frame, "time": time_value, "opcode": opcode, "operation": operation}
+
+            if opcode in ("0x01", "0x02"):  # Pairing Request / Response
+                params = {
+                    "io_capability": _strip(_col(parts, 3)),
+                    "oob": _strip(_col(parts, 4)),
+                    "authreq": _strip(_col(parts, 5)),
+                    "mitm": _strip(_col(parts, 6)),
+                    "sc": _strip(_col(parts, 7)),
+                    "bonding": _strip(_col(parts, 8)),
+                    "max_key_size": _strip(_col(parts, 9)),
+                    "key_distribution": _strip(_col(parts, 10 if opcode == "0x01" else 11)),
+                }
+                event["parameters"] = params
+                if opcode == "0x01":
+                    pairing_request = params
+                else:
+                    pairing_response = params
+            elif opcode == "0x05":  # Pairing Failed
+                reason = _smp_fail_reason(_col(parts, 12))
+                event["reason"] = reason
+                failures.append({"frame": frame, "reason": reason})
+            elif opcode == "0x06":  # Encryption Information: LTK
+                ltk = _strip(_col(parts, 13))
+                if ltk:
+                    key_material["ltk"] = ltk
+            elif opcode == "0x07":  # Master Identification: EDIV (+ rand, not a filterable field set here)
+                ediv = _strip(_col(parts, 14))
+                if ediv:
+                    key_material["ediv"] = ediv
+            elif opcode == "0x08":  # Identity Information: IRK
+                irk = _strip(_col(parts, 15))
+                if irk:
+                    key_material["irk"] = irk
+            timeline.append(event)
+
+        method, method_note = _infer_pairing_method(pairing_request, pairing_response)
+
+        findings: list[Finding] = []
+        if method == "Just Works":
+            finding: Finding = {
+                "observation": (
+                    f"Pairing uses Just Works ({method_note}) — no authenticated MITM protection. "
+                    "A passive attacker that captures this exchange and later recovers the LTK can decrypt all traffic."
+                ),
+                "severity": "low",
+                "confidence": "likely",
+                "evidence": [
+                    FindingEvidence(
+                        field="btsmp.io_capability",
+                        filter="btsmp.opcode == 0x01 or btsmp.opcode == 0x02",
+                        description="Pairing request/response IO capabilities and authreq flags",
+                        value=(
+                            f"initiator io={pairing_request['io_capability'] if pairing_request else '?'} "
+                            f"mitm={pairing_request['mitm'] if pairing_request else '?'}; "
+                            f"responder io={pairing_response['io_capability'] if pairing_response else '?'} "
+                            f"mitm={pairing_response['mitm'] if pairing_response else '?'}"
+                        ),
+                        frame=timeline[0]["frame"] if timeline else None,
+                    )
+                ],
+                "next_steps": [
+                    "Confirm with the device vendor whether a stronger association model (passkey, OOB, NFC) is possible.",
+                ],
+            }
+            findings.append(finding)
+        for failure in failures:
+            fail_finding: Finding = {
+                "observation": f"Pairing failed: {failure['reason']}.",
+                "severity": "info",
+                "confidence": "confirmed",
+                "evidence": [
+                    FindingEvidence(
+                        field="btsmp.reason",
+                        filter=f"frame.number == {failure['frame']}",
+                        description="Pairing Failed reason code",
+                        value=failure["reason"],
+                        frame=failure["frame"],
+                    )
+                ],
+            }
+            findings.append(fail_finding)
+
+        distributed = _key_distribution(pairing_request["key_distribution"]) if pairing_request else []
+        summary_lines = [f"BLE pairing: {len(timeline)} SMP message(s)."]
+        if pairing_request or pairing_response:
+            summary_lines.append(f"Pairing method: {method} ({method_note}).")
+        if distributed:
+            summary_lines.append(f"Initiator key distribution: {', '.join(distributed)}.")
+        if key_material:
+            summary_lines.append(
+                f"Distributed key material captured: {', '.join(sorted(key_material))} (values in key_material)."
+            )
+        if failures:
+            summary_lines.append(f"{len(failures)} pairing failure(s).")
+
+        return envelope_response(
+            data={
+                "timeline": timeline,
+                "pairing_request": pairing_request,
+                "pairing_response": pairing_response,
+                "pairing_method": {"method": method, "note": method_note},
+                "key_material": key_material,
+                "findings": findings,
+                "summary": "\n".join(summary_lines),
+            },
+            scope={"pcap_file": pcap_file, "filter": "btsmp"},
+            coverage={"status": "partial" if truncated else "complete", "events": len(timeline), "limit": limit},
+            truncated=truncated or None,
+            warnings=warnings or None,
+        )
+
     return {
         "ble_devices": ble_devices,
         "ble_scan_activity": ble_scan_activity,
         "ble_gatt_timeline": ble_gatt_timeline,
         "ble_connections": ble_connections,
+        "ble_pairing": ble_pairing,
     }

@@ -360,6 +360,49 @@ def build_all_fixtures(output_dir: Path) -> dict[str, Path]:
     p_ble_gatt.write_bytes(ble_gatt_bytes)
     generated["ble_gatt"] = p_ble_gatt
 
+    # 9. ble_pairing_h4.pcap (linktype 201, HCI H4 with direction phdr)
+    # An LE Legacy Just Works pairing exchange (NoInputNoOutput, no MITM) with
+    # full key distribution: confirm/random, LTK (Encryption Information),
+    # EDIV (Master Identification), IRK (Identity Information), identity
+    # address, and CSRK (Signing Information). SMP rides L2CAP CID 0x0006.
+    p_ble_pairing = output_dir / "ble_pairing_h4.pcap"
+    ble_pairing_bytes = bytearray(make_pcap_header(linktype=201))
+
+    def smp(direction: int, hex_pdu: str) -> bytes:
+        pdu = bytes.fromhex(hex_pdu)
+        l2cap = struct.pack("<HH", len(pdu), 0x0006) + pdu  # length, CID 0x0006 (SMP)
+        acl = struct.pack("<HH", 0x2000 | 0x000C, len(l2cap)) + l2cap
+        return struct.pack("<IB", direction, 0x02) + acl
+
+    confirm_value = "00" * 16
+    random_value = "11" * 16
+    ltk_value = "2b7d1c4e9f0a3d685e214a7c0fd8b649"  # 16-byte LTK
+    ediv_value = "1234"
+    master_rand = "a1b2c3d4e5f60718"
+    irk_value = "3c8e9f0a1b2c3d4e5f60718293a4b5c6"
+    csrk_value = "d4c3b2a1908f7e6d5c4b3a29180f7e6d"
+
+    smp_frames: list[bytes] = [
+        evt(0x3E, le_conn_complete),  # frame 1: connection established (same peer as the GATT fixture)
+        smp(0, "01" + "03" + "00" + "00" + "10" + "07" + "07"),
+        # Pairing Request: NoInputNoOutput, no OOB, authreq 0x00 (no MITM/SC/bonding),
+        # max key size 16, initiator+responder key distribution = enc|id|sign.
+        smp(1, "02" + "03" + "00" + "00" + "10" + "07" + "07"),  # Pairing Response: same parameters
+        smp(0, "03" + confirm_value),  # Pairing Confirm
+        smp(1, "04" + random_value),  # Pairing Random
+        smp(1, "06" + ltk_value),  # Encryption Information: LTK
+        smp(1, "07" + ediv_value + master_rand),  # Master Identification: EDIV + rand
+        smp(1, "08" + irk_value),  # Identity Information: IRK
+        smp(1, "09" + "01" + "80a997239b4480"),  # Identity Address: random, little-endian
+        smp(1, "0A" + csrk_value),  # Signing Information: CSRK
+        evt(0x05, disconnect),  # frame 11: remote disconnect
+    ]
+    for i, frame in enumerate(smp_frames):
+        ble_pairing_bytes.extend(make_pcap_packet(frame, sec=8000, usec=i * 10000))
+
+    p_ble_pairing.write_bytes(ble_pairing_bytes)
+    generated["ble_pairing"] = p_ble_pairing
+
     return generated
 
 

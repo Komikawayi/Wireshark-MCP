@@ -566,3 +566,131 @@ class TestBleConnectionsRealWorldShapes:
         assert connections[0]["handle"] == "0x0020"
         assert connections[0]["connect"]["peer_address"] == "fc:de:c5:ae:c4:d6"
         assert connections[0]["connect"]["interval_ms"] == 30.0
+
+
+class TestBlePairingContract:
+    """Field and filter contract for the pairing analysis handler."""
+
+    @pytest.mark.asyncio
+    async def test_requests_smp_fields(self, mock_client: MockTSharkClient) -> None:
+        result = await mock_client.extract_fields(
+            "test.pcap",
+            [
+                "frame.number",
+                "frame.time_relative",
+                "btsmp.opcode",
+                "btsmp.io_capability",
+                "btsmp.oob_data_flags",
+                "btsmp.authreq",
+                "btsmp.mitm_flag",
+                "btsmp.sc_flag",
+                "btsmp.bonding_flags",
+                "btsmp.max_enc_key_size",
+                "btsmp.initiator_key_distribution",
+                "btsmp.responder_key_distribution",
+                "btsmp.reason",
+                "btsmp.long_term_key",
+                "btsmp.ediv",
+                "btsmp.id_resolving_key",
+            ],
+            display_filter="btsmp",
+            limit=100,
+        )
+        for field in ("btsmp.opcode", "btsmp.io_capability", "btsmp.mitm_flag", "btsmp.long_term_key", "btsmp.ediv"):
+            assert f"-e {field}" in result
+        assert "-Y btsmp" in result
+
+
+class TestBlePairingSemantics:
+    """Pairing method inference and key-material extraction."""
+
+    SMP_HEADER = (
+        "frame.number\tframe.time_relative\tbtsmp.opcode\tbtsmp.io_capability\tbtsmp.oob_data_flags\t"
+        "btsmp.authreq\tbtsmp.mitm_flag\tbtsmp.sc_flag\tbtsmp.bonding_flags\tbtsmp.max_enc_key_size\t"
+        "btsmp.initiator_key_distribution\tbtsmp.responder_key_distribution\tbtsmp.reason\t"
+        "btsmp.long_term_key\tbtsmp.ediv\tbtsmp.id_resolving_key"
+    )
+
+    @staticmethod
+    def _handlers(client: object) -> dict:
+        return make_ble_protocol_handlers(client)
+
+    @pytest.mark.asyncio
+    async def test_just_works_inference_and_finding(self) -> None:
+        mock_client = AsyncMock()
+        rows = [
+            self.SMP_HEADER,
+            "2\t0.010000\t0x01\t0x03\t0x00\t0x00\tFalse\tFalse\t0x00\t16\t0x07\t0x07\t\t\t\t",
+            "3\t0.020000\t0x02\t0x03\t0x00\t0x00\tFalse\tFalse\t0x00\t16\t0x07\t0x07\t\t\t\t",
+        ]
+        mock_client.extract_fields.return_value = success_response("\n".join(rows))
+
+        parsed = parse_tool_result(await self._handlers(mock_client)["ble_pairing"]("test.pcap"))
+
+        assert parsed["success"] is True
+        assert parsed["data"]["pairing_method"]["method"] == "Just Works"
+        finding = parsed["data"]["findings"][0]
+        assert finding["severity"] == "low"
+        assert finding["confidence"] == "likely"
+        assert "no authenticated MITM protection" in finding["observation"]
+
+    @pytest.mark.asyncio
+    async def test_passkey_inference_with_mitm(self) -> None:
+        mock_client = AsyncMock()
+        rows = [
+            self.SMP_HEADER,
+            "2\t0.010000\t0x01\t0x04\t0x00\t0x04\tTrue\tFalse\t0x00\t16\t0x07\t0x07\t\t\t\t",
+            "3\t0.020000\t0x02\t0x00\t0x00\t0x04\tTrue\tFalse\t0x00\t16\t0x07\t0x07\t\t\t\t",
+        ]
+        mock_client.extract_fields.return_value = success_response("\n".join(rows))
+
+        parsed = parse_tool_result(await self._handlers(mock_client)["ble_pairing"]("test.pcap"))
+
+        # KeyboardDisplay initiator + DisplayOnly responder with MITM: passkey territory.
+        assert parsed["data"]["pairing_method"]["method"] == "Passkey Entry"
+        assert parsed["data"]["findings"] == []  # authenticated pairing is not flagged
+
+    @pytest.mark.asyncio
+    async def test_key_material_extracted(self) -> None:
+        mock_client = AsyncMock()
+        rows = [
+            self.SMP_HEADER,
+            "6\t0.050000\t0x06\t\t\t\t\t\t\t\t\t\t\t2b7d1c4e9f0a3d685e214a7c0fd8b649\t\t",
+            "7\t0.060000\t0x07\t\t\t\t\t\t\t\t\t\t\t\t0x1234\t",
+            "8\t0.070000\t0x08\t\t\t\t\t\t\t\t\t\t\t\t\t3c8e9f0a1b2c3d4e",
+        ]
+        mock_client.extract_fields.return_value = success_response("\n".join(rows))
+
+        parsed = parse_tool_result(await self._handlers(mock_client)["ble_pairing"]("test.pcap"))
+
+        key_material = parsed["data"]["key_material"]
+        assert key_material["ltk"] == "2b7d1c4e9f0a3d685e214a7c0fd8b649"
+        assert key_material["ediv"] == "0x1234"
+        assert key_material["irk"] == "3c8e9f0a1b2c3d4e"
+
+    @pytest.mark.asyncio
+    async def test_pairing_failure_reason_attribution(self) -> None:
+        mock_client = AsyncMock()
+        rows = [
+            self.SMP_HEADER,
+            "9\t0.080000\t0x05\t\t\t\t\t\t\t\t\t\t0x04\t\t\t",
+        ]
+        mock_client.extract_fields.return_value = success_response("\n".join(rows))
+
+        parsed = parse_tool_result(await self._handlers(mock_client)["ble_pairing"]("test.pcap"))
+
+        failure_finding = parsed["data"]["findings"][0]
+        assert failure_finding["severity"] == "info"
+        assert failure_finding["confidence"] == "confirmed"
+        assert "Confirm Value Failed" in failure_finding["observation"]
+
+    @pytest.mark.asyncio
+    async def test_no_smp_traffic(self) -> None:
+        mock_client = AsyncMock()
+        mock_client.extract_fields.return_value = success_response("")
+
+        parsed = parse_tool_result(await self._handlers(mock_client)["ble_pairing"]("test.pcap"))
+
+        assert parsed["success"] is True
+        assert parsed["data"]["timeline"] == []
+        assert "No BLE pairing" in parsed["data"]["summary"]

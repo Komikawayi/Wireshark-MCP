@@ -154,6 +154,9 @@ PROTOCOL_TOOL_MAP: dict[str, list[Recommendation]] = {
     "btatt": [
         Recommendation("wireshark_analyze_protocol", "ble_gatt_timeline"),
     ],
+    "btsmp": [
+        Recommendation("wireshark_analyze_protocol", "ble_pairing"),
+    ],
     "bthci_acl": [
         Recommendation("wireshark_analyze_protocol", "ble_gatt_timeline"),
         Recommendation("wireshark_analyze_protocol", "ble_connections"),
