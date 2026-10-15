@@ -260,22 +260,6 @@ async def test_real_pcap_gatt_timeline(pcap_fixtures: dict[str, str]) -> None:
     assert by_frame[9]["operation"] == "Read By Type Response"
     assert by_frame[9]["handle"] == "0x000b"
     assert by_frame[9]["value"] in ("424c452d464958", None)
-    # TEMP CI DEBUG (remove after the 4.2 shape is confirmed): dump the raw field
-    # render of the declaration exchange so the failing runner's output carries
-    # the exact tshark shape under test.
-    debug = parse_tool_result(
-        await client.extract_fields(
-            pcap,
-            [
-                "frame.number", "btatt.opcode", "btatt.handle", "btatt.value", "btatt.handles_info",
-                "btatt.group_end_handle", "btatt.uuid16", "btatt.uuid128",
-                "btatt.characteristic_uuid16", "btatt.characteristic_uuid128",
-            ],
-            display_filter="btatt.opcode == 0x08 || btatt.opcode == 0x09",
-            limit=10,
-        )
-    )
-    print(f"CI-DEBUG declaration exchange:\n{debug['data']}")
     # Characteristic Declaration (0x2803) resolves the Battery Level value handle.
     assert data["handle_map"]["0x000e"] == "Battery Level (0x2a19)"
     assert data["handle_map"]["0x000b"] == "Client Characteristic Configuration (0x2902)"

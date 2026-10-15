@@ -762,7 +762,7 @@ class TestGattLabelVersionShapes:
         rows = [
             GATT_HEADER,
             "10\t0.080000\t0x08\t\t\t\t0x0004\t\t0x2803",
-            "11\t0.090000\t0x09\t0x000d,0x000e\t\t\t0x0004\t\t0x2a19,0x2803\t\t",
+            "11\t0.090000\t0x09\t0x000d,0x000e\t\t\t0x0004\t\t0x2803,0x2a19,0x2803\t\t",
         ]
         mock_client.extract_fields.return_value = success_response("\n".join(rows))
 

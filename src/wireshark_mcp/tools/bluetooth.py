@@ -806,8 +806,12 @@ def make_ble_protocol_handlers(client: TSharkClient) -> dict[str, ProtocolHandle
                     # ("0x2a00,0x2a00" for a two-entry response): pairing those
                     # would mislabel handles, and a wrong label is worse than none.
                     # Only pair when the uuid instances are distinct.
+                    # tshark 4.2.2 observed shape (from the CI debug dump):
+                    # uuid16 arrives as "0x2803,0x2a19,0x2803" - the declaration
+                    # type injected around the entry uuid - so filter the
+                    # declaration-type instances too, not just 0x2800/0x2801.
                     char_uuids = _split_multivalue(parts[9]) or [
-                        u for u in _split_multivalue(parts[8]) if u not in ("0x2800", "0x2801")
+                        u for u in _split_multivalue(parts[8]) if u not in ("0x2800", "0x2801", "0x2803")
                     ]
                     if len(set(char_uuids)) == len(char_uuids):
                         for value_handle, char_uuid in zip(entry_handles[1::2], char_uuids, strict=False):
