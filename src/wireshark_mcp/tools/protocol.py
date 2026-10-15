@@ -13,6 +13,7 @@ import logging
 from typing import Any
 
 from ..tshark.client import TSharkClient
+from .bluetooth import make_ble_protocol_handlers
 from .envelope import ProtocolHandler, normalize_tool_result, parse_tool_result, success_response
 from .formatting import CRIT, INFO, OK, WARN
 
@@ -583,4 +584,10 @@ def make_protocol_handlers(client: TSharkClient) -> dict[str, ProtocolHandler]:
             f"{WARN} ICMP tunneling indicators (up to {{limit}}):\n{{data}}",
         ),
     }
+
+    # BLE protocol recipes: deep aggregations (device grouping, scanner fan-out,
+    # service-table resolution, per-handle session accounting) live in the
+    # bluetooth module but register through this dispatcher like any protocol.
+    handlers.update(make_ble_protocol_handlers(client))
+
     return handlers

@@ -2,12 +2,15 @@
 
 import asyncio
 import json
+from unittest.mock import AsyncMock
 
+import pytest
 from conftest import MockTSharkClient, call_tool_text
 from mcp.server import MCPServer
 
+from wireshark_mcp.tools.envelope import success_response
 from wireshark_mcp.tools.extract import register_extract_tools
-from wireshark_mcp.tools.registry import ToolRegistry
+from wireshark_mcp.tools.registry import ToolRegistry, register_open_file_tool
 
 
 def _run_async(coro):
@@ -95,6 +98,10 @@ def test_full_server_exposes_a_stable_tool_surface(monkeypatch) -> None:
     # list costs prefix bytes on every request and, more importantly, competes for the
     # model's attention at selection time. Lower this as tools are removed; raising it
     # should require justifying why a new tool is not reachable through an existing one.
+    # BLE's four deep analyses (devices / scanners / GATT timeline / connections)
+    # are wireshark_analyze_protocol values, not tools: their Python-side aggregation
+    # lives in protocol handlers, so deep protocol analysis adds enum values and
+    # recommendations without touching the tool surface.
     assert len(names) <= 52, f"tool surface grew to {len(names)}; justify or consolidate"
 
 
@@ -119,3 +126,17 @@ def test_every_recommended_protocol_value_is_in_the_enum() -> None:
     referenced = {rec.protocol for recs in PROTOCOL_TOOL_MAP.values() for rec in recs if rec.protocol}
     unsupported = referenced - set(supported_protocols())
     assert not unsupported, f"Recommended but unsupported protocol values: {sorted(unsupported)}"
+
+
+@pytest.mark.parametrize("protocol,is_ble", [("btatt", True), ("dns", False)])
+def test_ble_open_file_guidance_is_bounded_and_protocol_specific(mock_client, protocol, is_ble) -> None:
+    mock_client.get_protocol_stats = AsyncMock(return_value=success_response(f"  {protocol} frames:10 bytes:100"))
+    mock_client.get_file_info = AsyncMock(return_value=success_response("fixture.pcap"))
+    mcp = MCPServer("test")
+    registry = ToolRegistry(mcp, mock_client)
+    registry.register()
+    register_open_file_tool(mcp, mock_client, registry)
+    result = json.loads(_run_async(call_tool_text(mcp, "wireshark_open_file", {"pcap_file": "fixture.pcap"})))
+    assert result["success"] is True
+    assert ("recommendations are not a checklist" in result["data"]) is is_ble
+    assert ("limit=20" in result["data"]) is is_ble
