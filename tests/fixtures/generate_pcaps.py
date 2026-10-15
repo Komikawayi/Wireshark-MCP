@@ -17,9 +17,9 @@ def _checksum(data: bytes) -> int:
     return ~s & 0xFFFF
 
 
-def make_pcap_header() -> bytes:
-    # magic, ver_major(2), ver_minor(4), thiszone(0), sigfigs(0), snaplen(65535), linktype_ethernet(1)
-    return struct.pack("<IHHiIII", 0xA1B2C3D4, 2, 4, 0, 0, 65535, 1)
+def make_pcap_header(linktype: int = 1) -> bytes:
+    # magic, ver_major(2), ver_minor(4), thiszone(0), sigfigs(0), snaplen(65535), linktype (1=Ethernet default)
+    return struct.pack("<IHHiIII", 0xA1B2C3D4, 2, 4, 0, 0, 65535, linktype)
 
 
 def make_pcap_packet(frame: bytes, sec: int = 0, usec: int = 0) -> bytes:
@@ -87,6 +87,74 @@ def make_dns_query(qname: str, qtype: int = 1, txid: int = 0x1234) -> bytes:
     header = struct.pack("!HHHHHH", txid, flags, 1, 0, 0, 0)
     question = encode_dns_name(qname) + struct.pack("!HH", qtype, 1)
     return header + question
+
+
+# ── Bluetooth Low Energy fixture builders ────────────────────────────────────
+
+# Advertising access address 0x8e89bed6, little-endian on air.
+ADV_ACCESS_ADDRESS = bytes.fromhex("d6be898e")
+
+# Nordic sniffer pseudo-header flags (little-endian u16): dewhitened (bit0) |
+# signal_power_valid (bit1) | crc_checked (bit10) | crc_valid (bit11).
+# Payload and CRC are stored PLAIN in this format; tshark trusts the flags and
+# does not re-verify. Matches real captures produced by whad (linktype 256).
+BTLE_FLAGS_PLAIN = 0x0C03
+
+
+def _crc24_ble(pdu: bytes, crc_init: int = 0xAAAAAA) -> int:
+    """BLE CRC-24 over a plain (dewhitened) PDU.
+
+    Reflected polynomial of 0x65B is 0xDA6000; advertising CRCInit 0x555555
+    bit-reversed is 0xAAAAAA. Verified byte-identical against a real Nordic
+    sniffer capture (stored CRC bytes 72 ac ba for frame 1).
+    """
+    crc = crc_init
+    for byte in pdu:
+        crc ^= byte
+        for _ in range(8):
+            crc = (crc >> 1) ^ 0xDA6000 if crc & 1 else crc >> 1
+    return crc & 0xFFFFFF
+
+
+def _btle_rf_frame(pdu: bytes, rf_channel: int = 0) -> bytes:
+    """Nordic btle_rf frame: 10-byte RF header + access address + PDU + CRC-24."""
+    hdr = struct.pack("<BBBBIH", rf_channel, 0xDE, 0x80, 0, 0, BTLE_FLAGS_PLAIN)
+    #               channel, -34dBm, noise, aa_offenses, ref_aa, flags (LE!)
+    return hdr + ADV_ACCESS_ADDRESS + pdu + struct.pack("<I", _crc24_ble(pdu))[:3]
+
+
+def _eir(ad_type: int, data: bytes) -> bytes:
+    return bytes([len(data) + 1, ad_type]) + data
+
+
+def _adv_pdu(pdu_type: int, header_bits: int, payload: bytes) -> bytes:
+    # TxAdd lives at bit 6 (0x40) per tshark 4.6.8 dissection behavior, matching
+    # a real capture (header byte 0x60 -> TxAdd: Random). A spec-literal 0x80
+    # reads as Reserved / randomized_tx=False.
+    return struct.pack("<BB", pdu_type | header_bits, len(payload)) + payload
+
+
+def _adv_address(addr: str) -> bytes:
+    """'a2:d8:30:1e:9f:66' -> little-endian on-air byte order (66 9f 1e 30 d8 a2)."""
+    return bytes.fromhex(addr.replace(":", ""))[::-1]
+
+
+def make_att_acl_packet(direction: int, att_pdu: bytes) -> bytes:
+    """HCI H4 ACL packet carrying an ATT PDU, for linktype 201 (H4 with phdr).
+
+    direction: 0 = sent to controller, 1 = received from controller (4-byte phdr).
+    """
+    l2cap = struct.pack("<HH", len(att_pdu), 0x0004) + att_pdu  # length, CID 0x0004 (ATT)
+    acl = struct.pack("<HH", 0x2000 | 0x000C, len(l2cap)) + l2cap  # handle 0x000C, PB first-auto-flushable
+    # LINKTYPE_BLUETOOTH_HCI_H4_WITH_PHDR uses a network-order direction word,
+    # independent of the pcap record header's byte order.
+    return struct.pack(">IB", direction, 0x02) + acl
+
+
+def make_h4_event_packet(direction: int, event_code: int, params: bytes) -> bytes:
+    """HCI H4 event packet for linktype 201 (H4 with phdr)."""
+    event = bytes([event_code, len(params)]) + params
+    return struct.pack(">IB", direction, 0x04) + event
 
 
 def build_all_fixtures(output_dir: Path) -> dict[str, Path]:
@@ -175,6 +243,167 @@ def build_all_fixtures(output_dir: Path) -> dict[str, Path]:
     multi_bytes.extend(make_pcap_packet(make_ethernet_frame(pkt), sec=4000, usec=0))
     p_multi.write_bytes(multi_bytes)
     generated["multivalue"] = p_multi
+
+    # 6. truncated_capture.pcap
+    # A 2-packet capture whose last record is cut short mid-packet: the byte
+    # stream ends halfway through the second frame. Real sniffer captures get
+    # exactly this shape when the capture tool is killed (e.g. pkill). tshark
+    # dissects packet 1, reports "cut short in the middle of a packet", and
+    # exits 14 — usable output plus a warning, not a fatal read error.
+    p_trunc = output_dir / "truncated_capture.pcap"
+    trunc_bytes = bytearray(make_pcap_header())
+    q1 = make_dns_query("first.example.com", qtype=1, txid=0x1111)
+    trunc_bytes.extend(
+        make_pcap_packet(
+            make_ethernet_frame(make_udp_packet("192.168.1.20", "8.8.8.8", 53100, 53, q1)), sec=7000, usec=0
+        )
+    )
+    q2 = make_dns_query("second.example.com", qtype=1, txid=0x2222)
+    frame2 = make_ethernet_frame(make_udp_packet("192.168.1.20", "8.8.8.8", 53101, 53, q2))
+    # Write the record header claiming the full length, then only half the bytes.
+    trunc_bytes.extend(struct.pack("<IIII", 7000, 10000, len(frame2), len(frame2)))
+    trunc_bytes.extend(frame2[: len(frame2) // 2])
+
+    p_trunc.write_bytes(trunc_bytes)
+    generated["truncated"] = p_trunc
+
+    # 7. ble_advertising.pcap (linktype 256, Nordic btle_rf)
+    # Three advertisers, one active scanner, and one SCAN_RSP. Device A and B share
+    # the local name "TwinLight" (dual-address same-name detection path).
+    p_ble_adv = output_dir / "ble_advertising.pcap"
+    ble_adv_bytes = bytearray(make_pcap_header(linktype=256))
+
+    addr_a = "a2:d8:30:1e:9f:66"  # random address (TxAdd=1)
+    addr_b = "aa:bb:cc:dd:ee:ff"  # random address (TxAdd=1), same name as A
+    addr_c = "66:55:44:33:22:11"  # public address (TxAdd=0)
+    addr_s = "ee:00:11:22:33:44"  # scanner
+
+    def adv_payload(adv_a: str, eirs: bytes) -> bytes:
+        return _adv_address(adv_a) + eirs
+
+    flags_eir = _eir(0x01, b"\x06")  # LE General Discoverable + BR/EDR Not Supported
+
+    eir_a = flags_eir + _eir(0x09, b"TwinLight")
+    eir_b = _eir(0x09, b"TwinLight")
+    eir_c = flags_eir + _eir(0x09, b"StaticDev") + _eir(0xFF, struct.pack("<H", 0x0059) + b"\x55\x11")
+
+    ble_frames: list[bytes] = [
+        _btle_rf_frame(_adv_pdu(0x00, 0x40, adv_payload(addr_a, eir_a))),  # A ADV_IND
+        _btle_rf_frame(_adv_pdu(0x00, 0x00, adv_payload(addr_c, eir_c))),  # C ADV_IND (public)
+        _btle_rf_frame(_adv_pdu(0x00, 0x40, adv_payload(addr_b, eir_b))),  # B ADV_IND (same name)
+        _btle_rf_frame(_adv_pdu(0x03, 0x00, _adv_address(addr_s) + _adv_address(addr_a))),  # SCAN_REQ S->A
+        _btle_rf_frame(_adv_pdu(0x04, 0x40, adv_payload(addr_a, eir_a))),  # A SCAN_RSP
+        _btle_rf_frame(_adv_pdu(0x03, 0x00, _adv_address(addr_s) + _adv_address(addr_c))),  # SCAN_REQ S->C
+        _btle_rf_frame(_adv_pdu(0x00, 0x40, adv_payload(addr_a, eir_a))),  # A ADV_IND again
+        _btle_rf_frame(_adv_pdu(0x00, 0x40, adv_payload(addr_b, eir_b))),  # B ADV_IND again
+        _btle_rf_frame(_adv_pdu(0x03, 0x00, _adv_address(addr_s) + _adv_address(addr_a))),  # SCAN_REQ S->A
+    ]
+    for i, frame in enumerate(ble_frames):
+        ble_adv_bytes.extend(make_pcap_packet(frame, sec=6000, usec=i * 10000))
+
+    p_ble_adv.write_bytes(ble_adv_bytes)
+    generated["ble_adv"] = p_ble_adv
+
+    # 8. ble_gatt_h4.pcap (linktype 201, HCI H4 with direction phdr)
+    # A full connection lifecycle: LE Connection Complete, GATT discovery (with a
+    # Characteristic Declaration query), write, notification, parameter update,
+    # and a remote disconnect. All on connection handle 0x000C to peer 80:a9:97:23:9b:44.
+    p_ble_gatt = output_dir / "ble_gatt_h4.pcap"
+    ble_gatt_bytes = bytearray(make_pcap_header(linktype=201))
+
+    def att(direction: int, hex_pdu: str) -> bytes:
+        return make_att_acl_packet(direction, bytes.fromhex(hex_pdu))
+
+    def evt(event_code: int, params: bytes) -> bytes:
+        return make_h4_event_packet(1, event_code, params)
+
+    peer_bytes = _adv_address("80:a9:97:23:9b:44")  # little-endian on the wire
+    le_conn_complete = (
+        bytes.fromhex("0100")  # subevent 0x01 (LE Connection Complete), status 0x00
+        + struct.pack("<H", 0x000C)  # connection handle
+        + bytes.fromhex("0000")  # role 0x00 (central), peer address type 0x00 (public)
+        + peer_bytes
+        + struct.pack("<HHH", 24, 0, 72)  # interval 24 (30ms), latency 0, timeout 72 (720ms)
+        + bytes.fromhex("05")  # central clock accuracy
+    )
+    conn_update = (
+        bytes.fromhex("0300")  # subevent 0x03 (LE Connection Update Complete), status 0x00
+        + struct.pack("<HHHH", 0x000C, 42, 0, 600)  # handle, interval 42 (52.5ms), latency 0, timeout 600 (6s)
+    )
+    disconnect = (
+        bytes.fromhex("00")  # status
+        + struct.pack("<H", 0x000C)  # connection handle
+        + bytes.fromhex("13")  # reason: Remote User Terminated Connection
+    )
+
+    gatt_frames: list[bytes] = [
+        evt(0x3E, le_conn_complete),  # frame 1: connection established
+        att(0, "02f700"),  # Exchange MTU Request (no handle/value edge case)
+        att(1, "03f700"),  # Exchange MTU Response
+        att(0, "100100ffff0028"),  # Read By Group Type Request (Primary Service)
+        att(1, "110601000500001806000f000118"),  # RBGT Rsp: GAP 0x0001-0x0005, GATT 0x0006-0x000f
+        att(0, "040a000f00"),  # Find Information Request
+        att(1, "05010b000229"),  # Find Info Rsp: handle 0x000b + CCCD 0x2902
+        att(0, "080100ffff002a"),  # Read By Type Request (Device Name)
+        att(1, "09090b00424c452d464958"),  # RBTR Rsp: handle 0x000b, value "BLE-FIX"
+        att(0, "080100ffff0328"),  # Read By Type Request (Characteristic Declaration)
+        att(1, "09070d000c0e00192a"),  # RBTR Rsp: decl 0x000d -> Battery Level, value handle 0x000e
+        att(0, "0a0b00"),  # Read Request
+        att(1, "0b424c452d464958"),  # Read Response: value present, handle unlinked
+        att(0, "120c00010203"),  # Write Request: handle 0x000c, value 010203
+        att(1, "13"),  # Write Response: no handle, no value
+        att(1, "1b0e002a2b"),  # Notification: handle 0x000e (Battery Level value handle)
+        evt(0x3E, conn_update),  # frame 17: connection parameters updated
+        evt(0x05, disconnect),  # frame 18: remote disconnect (0x13)
+    ]
+    for i, frame in enumerate(gatt_frames):
+        ble_gatt_bytes.extend(make_pcap_packet(frame, sec=5000, usec=i * 10000))
+
+    p_ble_gatt.write_bytes(ble_gatt_bytes)
+    generated["ble_gatt"] = p_ble_gatt
+
+    # 9. ble_pairing_h4.pcap (linktype 201, HCI H4 with direction phdr)
+    # An LE Legacy Just Works pairing exchange (NoInputNoOutput, no MITM) with
+    # full key distribution: confirm/random, LTK (Encryption Information),
+    # EDIV (Master Identification), IRK (Identity Information), identity
+    # address, and CSRK (Signing Information). SMP rides L2CAP CID 0x0006.
+    p_ble_pairing = output_dir / "ble_pairing_h4.pcap"
+    ble_pairing_bytes = bytearray(make_pcap_header(linktype=201))
+
+    def smp(direction: int, hex_pdu: str) -> bytes:
+        pdu = bytes.fromhex(hex_pdu)
+        l2cap = struct.pack("<HH", len(pdu), 0x0006) + pdu  # length, CID 0x0006 (SMP)
+        acl = struct.pack("<HH", 0x2000 | 0x000C, len(l2cap)) + l2cap
+        return struct.pack(">IB", direction, 0x02) + acl
+
+    confirm_value = "00" * 16
+    random_value = "11" * 16
+    ltk_value = "2b7d1c4e9f0a3d685e214a7c0fd8b649"  # 16-byte LTK
+    ediv_value = "1234"
+    master_rand = "a1b2c3d4e5f60718"
+    irk_value = "3c8e9f0a1b2c3d4e5f60718293a4b5c6"
+    csrk_value = "d4c3b2a1908f7e6d5c4b3a29180f7e6d"
+
+    smp_frames: list[bytes] = [
+        evt(0x3E, le_conn_complete),  # frame 1: connection established (same peer as the GATT fixture)
+        smp(0, "01" + "03" + "00" + "00" + "10" + "07" + "07"),
+        # Pairing Request: NoInputNoOutput, no OOB, authreq 0x00 (no MITM/SC/bonding),
+        # max key size 16, initiator+responder key distribution = enc|id|sign.
+        smp(1, "02" + "03" + "00" + "00" + "10" + "07" + "07"),  # Pairing Response: same parameters
+        smp(0, "03" + confirm_value),  # Pairing Confirm
+        smp(1, "04" + random_value),  # Pairing Random
+        smp(1, "06" + ltk_value),  # Encryption Information: LTK
+        smp(1, "07" + ediv_value + master_rand),  # Master Identification: EDIV + rand
+        smp(1, "08" + irk_value),  # Identity Information: IRK
+        smp(1, "09" + "01" + "80a997239b4480"),  # Identity Address: random, little-endian
+        smp(1, "0A" + csrk_value),  # Signing Information: CSRK
+        evt(0x05, disconnect),  # frame 11: remote disconnect
+    ]
+    for i, frame in enumerate(smp_frames):
+        ble_pairing_bytes.extend(make_pcap_packet(frame, sec=8000, usec=i * 10000))
+
+    p_ble_pairing.write_bytes(ble_pairing_bytes)
+    generated["ble_pairing"] = p_ble_pairing
 
     return generated
 

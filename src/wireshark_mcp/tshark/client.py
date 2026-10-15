@@ -49,6 +49,13 @@ class WiresharkSuiteClient(
     MAX_STREAM_STDOUT_BYTES = 50 * 1024 * 1024
     MAX_STDERR_BYTES = 1024 * 1024
 
+    @staticmethod
+    def _is_capture_short_read(binary: str, returncode: int | None, stderr: str) -> bool:
+        """Exit 2 is generic on older tshark: only a short-read diagnostic qualifies."""
+        return binary in {"tshark", "tshark.exe"} and (
+            returncode == 14 or (returncode == 2 and "cut short" in stderr.lower())
+        )
+
     def __init__(
         self,
         tshark_path: str = "tshark",
@@ -422,7 +429,12 @@ class WiresharkSuiteClient(
                     "bytes_read": bytes_read,
                     "error": {"type": "LimitExceeded", "message": "tshark stderr exceeded its safety limit"},
                 }
-            if proc.returncode != 0:
+            # Same downgrade as _run_command: exit 14 means the capture was
+            # truncated mid-packet; the rows already streamed are still valid.
+            # Old tshark (3.x/4.0/4.2) reports a mid-packet truncation with exit
+            # code 2; 4.4+ uses the dedicated warning code 14. Either way the rows
+            # dissected so far are valid, so both downgrade when output exists.
+            if proc.returncode != 0 and not (self._is_capture_short_read(binary, proc.returncode, stderr) and rows > 0):
                 return {
                     "success": False,
                     "rows": rows,
@@ -584,22 +596,36 @@ class WiresharkSuiteClient(
                 )
 
             if proc.returncode != 0 and not truncated:
-                logger.warning("Command failed (exit %d): %s", proc.returncode, safe_command)
-                return json.dumps(
-                    {
-                        "success": False,
-                        "error": {
-                            "type": "ExecutionError",
-                            "message": f"Command failed with exit code {proc.returncode}",
-                            "details": self._redact_diagnostics(error or final_output, cmd),
-                        },
-                    }
-                )
+                # A capture truncated mid-packet (a sniffer killed with pkill leaves
+                # exactly this) makes tshark exit 14 on 4.4+ and 2 on older releases
+                # while the rows dissected so far stay valid, and stderr carries the
+                # "cut short" note. Downgrade to a success envelope with that note
+                # instead of failing every tool on an otherwise usable capture.
+                if self._is_capture_short_read(binary, proc.returncode, error) and final_output:
+                    logger.warning(
+                        "tshark reported a truncated capture (exit %d); returning partial output: %s",
+                        proc.returncode,
+                        safe_command,
+                    )
+                else:
+                    logger.warning("Command failed (exit %d): %s", proc.returncode, safe_command)
+                    return json.dumps(
+                        {
+                            "success": False,
+                            "error": {
+                                "type": "ExecutionError",
+                                "message": f"Command failed with exit code {proc.returncode}",
+                                "details": self._redact_diagnostics(error or final_output, cmd),
+                            },
+                        }
+                    )
 
             for out_path in self._output_paths(cmd):
                 self._cache.invalidate_file(out_path)
 
-            if pcap_file and raw_to_cache is not None:
+            # The stdout-only cache cannot retain the short-read warning. Do not
+            # turn a second read of an incomplete capture into an unqualified hit.
+            if pcap_file and raw_to_cache is not None and proc.returncode == 0:
                 self._cache.put(pcap_file, cmd, raw_to_cache)
 
             stderr_note = error if (error and not truncated) else ""

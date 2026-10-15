@@ -142,7 +142,30 @@ PROTOCOL_TOOL_MAP: dict[str, list[Recommendation]] = {
         Recommendation("wireshark_analyze_protocol", "zigbee"),
     ],
     "btle": [
+        Recommendation("wireshark_analyze_protocol", "ble_devices"),
+        Recommendation("wireshark_analyze_protocol", "ble_scan_activity"),
+        Recommendation("wireshark_analyze_protocol", "ble_connections"),
         Recommendation("wireshark_analyze_protocol", "ble"),
+    ],
+    "btle_rf": [
+        Recommendation("wireshark_analyze_protocol", "ble_devices"),
+        Recommendation("wireshark_analyze_protocol", "ble_scan_activity"),
+    ],
+    "btatt": [
+        Recommendation("wireshark_analyze_protocol", "ble_gatt_timeline"),
+    ],
+    "btsmp": [
+        Recommendation("wireshark_analyze_protocol", "ble_pairing"),
+    ],
+    "bthci_acl": [
+        Recommendation("wireshark_analyze_protocol", "ble_gatt_timeline"),
+        Recommendation("wireshark_analyze_protocol", "ble_connections"),
+    ],
+    "bthci_evt": [
+        Recommendation("wireshark_analyze_protocol", "ble_connections"),
+    ],
+    "bthci_cmd": [
+        Recommendation("wireshark_analyze_protocol", "ble_connections"),
     ],
     "wlan": [
         Recommendation("wireshark_analyze_protocol", "wifi"),
@@ -304,6 +327,14 @@ def register_open_file_tool(mcp: MCPServer, client: TSharkClient, registry: Tool
                 output_parts.append(f"  {tool_name}: {registry.tool_doc(tool_name)}")
         else:
             output_parts.append("\nNo protocol-specific recommendations. Core tools are available.")
+
+        if detected_protocols & {"btle", "btle_rf", "btatt", "btsmp", "bthci_acl", "bthci_evt", "bthci_cmd"}:
+            output_parts.append(
+                "\nBLE: choose only the analysis relevant to the question; recommendations are not a checklist. "
+                "ble is the raw overview; ble_devices inventories advertisers; ble_scan_activity identifies scanners; "
+                "ble_gatt_timeline labels ATT operations; ble_connections tracks sessions; ble_pairing inspects SMP. "
+                "Start with limit=20 and increase only when the evidence is insufficient."
+            )
 
         output_parts.append(
             "\nStart with wireshark_quick_analysis or wireshark_get_packet_list. "

@@ -7,7 +7,9 @@ keeps one oversized result from inflating the rest of a session.
 
 50,325 bytes before this work; 21,438 after consolidating the tool surface.
 Bump MAX_WIRE_BYTES deliberately — the slack is there to absorb a schema change,
-not a new tool.
+not a new tool. Rolled back to 22,500: the BLE analyses were folded into
+wireshark_analyze_protocol values (52 tools, 22,130 bytes), so the earlier
+deltas are no longer needed.
 """
 
 import asyncio
