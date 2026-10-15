@@ -256,22 +256,25 @@ def _infer_pairing_method(request: dict[str, Any] | None, response: dict[str, An
     """
     if request is None or response is None:
         return "unknown", "pairing request/response pair not both present in this capture"
-    if request["oob"] not in ("0x00", "") or response["oob"] not in ("0x00", ""):
+    # Core Vol 3 Part H, Tables 2.6-2.8: SC is negotiated by both
+    # devices, whereas either device can request MITM protection. Legacy
+    # OOB requires both flags; SC OOB needs only one.
+    secure_connections = request["sc"] == "True" and response["sc"] == "True"
+    oob_req, oob_rsp = request["oob"] == "0x01", response["oob"] == "0x01"
+    if (oob_req and oob_rsp) or (secure_connections and (oob_req or oob_rsp)):
         return "OOB", "OOB data flag set"
-    mitm = request["mitm"] == "True" and response["mitm"] == "True"
+    mitm = request["mitm"] == "True" or response["mitm"] == "True"
     if not mitm:
         return "Just Works", "no MITM protection requested"
     io_req, io_rsp = request["io_capability"], response["io_capability"]
     displays = {"0x00", "0x01", "0x04"}
     keyboards = {"0x02", "0x04"}
-    if (
-        io_req in ("0x01", "0x04")
-        and io_rsp in ("0x01", "0x04")
-        and (request["sc"] == "True" or response["sc"] == "True")
-    ):
+    if io_req in ("0x01", "0x04") and io_rsp in ("0x01", "0x04") and secure_connections:
         return "Numeric Comparison", "MITM requested, both sides display-confirm capable, secure connections"
     if (io_req in keyboards and io_rsp in displays) or (io_rsp in keyboards and io_req in displays):
         return "Passkey Entry", "MITM requested, keyboard/display pairing"
+    if io_req == io_rsp == "0x02":
+        return "Passkey Entry", "MITM requested, user enters the same passkey on both keyboards"
     if io_req == "0x03" or io_rsp == "0x03":
         return "Just Works", "MITM requested but a side is NoInputNoOutput, so it degrades to Just Works"
     return "Just Works", "MITM requested, IO capabilities fall back to Just Works"
@@ -362,6 +365,168 @@ def _split_handles(raw: str) -> list[int]:
         with contextlib.suppress(ValueError):
             values.append(int(part, 16))
     return values
+
+
+def _gatt_context(parts: list[str], opcode: str) -> tuple[str, str]:
+    """Capture-local link identity and ATT server, not a global attribute handle.
+
+    connect_in distinguishes reused HCI handles. OTA links use their access
+    address. Requests address the server; responses/notifications originate at
+    it. HCI direction supplies the server side when BD_ADDRs are unavailable.
+    """
+    interface, handle, connected, access, src, dst, direction = map(_strip, parts[12:19])
+    interface = interface or "0"
+    if handle:
+        connection = f"hci:{interface}:{handle}@{connected or '?'}"
+    elif access:
+        connection = f"aa:{interface}:{access}"
+    elif src and dst:
+        connection = f"peers:{interface}:" + ",".join(sorted((src, dst)))
+    else:
+        connection = f"unknown:{interface}"
+    try:
+        is_request = int(opcode, 16) in {
+            0x02,
+            0x04,
+            0x06,
+            0x08,
+            0x0A,
+            0x0C,
+            0x0E,
+            0x10,
+            0x12,
+            0x14,
+            0x16,
+            0x1E,
+            0x20,
+            0x52,
+            0xD2,
+        }
+    except ValueError:
+        return connection, "unknown"
+    server = dst if is_request else src
+    if not server and direction in ("0", "1"):
+        source_side = int(direction)  # 0 sent (local), 1 received (remote)
+        server_side = 1 - source_side if is_request else source_side
+        server = "remote" if server_side else "local"
+    return connection, server or "unknown"
+
+
+def _resolve_gatt_discovery(
+    parsed_rows: list[tuple[list[str], str, str]],
+) -> tuple[list[dict[str, Any]], list[tuple[int, int, str]], dict[str, str]]:
+    """Resolve one connection/server namespace; pending queries are per ATT bearer."""
+    services: list[dict[str, Any]] = []
+    service_ranges: list[tuple[int, int, str]] = []
+    handle_labels: dict[str, str] = {}
+    pending_types: dict[str, str] = {}
+    for parts, opcode, _operation in parsed_rows:
+        cid = _strip(parts[6])
+        pending_rbt_type = pending_types.get(cid)
+        if opcode == "0x01":  # ATT Error Response terminates the pending request
+            pending_types.pop(cid, None)
+        if opcode == "0x11":  # Read By Group Type Response: service table
+            starts = _split_handles(parts[3])
+            ends = _split_handles(parts[7])
+            # Request correlation injects the queried type (0x2800/0x2801) as a
+            # trailing uuid16 instance; drop it. 128-bit service UUIDs render
+            # into btatt.uuid128 instead of uuid16. Uncorrelated responses
+            # (synthetic captures) carry entry UUIDs in btatt.value as raw LE hex.
+            uuid128_list = _split_multivalue(parts[9])
+            uuid_display = [u for u in _split_multivalue(parts[8]) if u not in ("0x2800", "0x2801")]
+            uuid_value = _split_multivalue(parts[4])
+            if uuid128_list:
+                uuid_pairs = [(u, f"0x{u}") for u in uuid128_list]
+            elif uuid_display:
+                uuid_pairs = [(uuid, _uuid_label_from_display(uuid)) for uuid in uuid_display]
+            else:
+                uuid_pairs = [(uuid_hex, _uuid_label(uuid_hex)) for uuid_hex in uuid_value]
+            # zip truncates to the shortest list, absorbing leftover injections.
+            for start, end, (uuid_raw, label) in zip(starts, ends, uuid_pairs, strict=False):
+                services.append(
+                    {
+                        "start_handle": f"0x{start:04x}",
+                        "end_handle": f"0x{end:04x}",
+                        "uuid": uuid_raw,
+                        "label": label,
+                    }
+                )
+                service_ranges.append((start, end, label))
+        elif opcode == "0x05":  # Find Information Response: handle -> UUID
+            fit_handles = _split_handles(parts[3])
+            fit_uuids = _split_multivalue(parts[8])
+            # Correlated renderings inject extra uuid16 instances (service /
+            # characteristic UUID lookups per handle), so the counts only match
+            # for clean single-entry responses. Pair only when they do; the
+            # 0x2803 declaration path provides labels otherwise.
+            if len(fit_handles) == len(fit_uuids):
+                for fit_handle, fit_uuid in zip(fit_handles, fit_uuids, strict=False):
+                    handle_labels.setdefault(f"0x{fit_handle:04x}", _uuid_label_from_display(fit_uuid))
+        elif opcode == "0x08":  # Read By Type Request: remember the queried type
+            pending_types.pop(cid, None)
+            queried_type = _strip(parts[8])
+            if queried_type:
+                pending_types[cid] = queried_type
+        elif opcode == "0x09" and pending_rbt_type == "0x2803":
+            # Read By Type Response to a Characteristic Declaration query.
+            # tshark 4.6+ renders each entry as raw bytes in btatt.value:
+            # properties(1) | value_handle(2) | uuid(2 or 16). Older releases
+            # (the Linux CI's 4.2) render structured fields instead: the value
+            # handle reuses btatt.handle (handles arrive as [decl, value_handle]
+            # per entry) and the UUID arrives in btatt.characteristic_uuid16/128.
+            entry_handles = _split_handles(parts[3])
+            entry_values = _split_multivalue(parts[4])
+            if entry_values:
+                for _decl_handle, entry_value in zip(entry_handles, entry_values, strict=False):
+                    try:
+                        raw = bytes.fromhex(entry_value)
+                    except ValueError:
+                        continue
+                    if len(raw) < 5:
+                        continue
+                    value_handle = int.from_bytes(raw[1:3], "little")
+                    if len(raw) >= 19:  # 128-bit UUID
+                        uuid_int = int.from_bytes(raw[3:19], "little")
+                        handle_labels[f"0x{value_handle:04x}"] = f"0x{uuid_int:032x}"
+                    else:
+                        uuid_int = int.from_bytes(raw[3:5], "little")
+                        name = UUID_NAMES.get(uuid_int)
+                        handle_labels[f"0x{value_handle:04x}"] = (
+                            f"{name} (0x{uuid_int:04x})" if name else f"0x{uuid_int:04x}"
+                        )
+            else:
+                # Structured-field shape on tshark <= 4.2 (confirmed in the
+                # release-4.2 dissector): the value handle reuses btatt.handle
+                # (handles arrive as [declaration, value_handle] per entry) and
+                # the entry UUID renders into btatt.uuid16 / btatt.uuid128,
+                # trailed by the generated queried-type instance. Filter the
+                # injection like the RBGT path. Guard against tshark 4.6's
+                # correlation, which can duplicate one uuid across entries
+                # ("0x2a00,0x2a00" for a two-entry response): pairing those
+                # would mislabel handles, and a wrong label is worse than none.
+                # Only pair when the uuid instances are distinct.
+                # tshark 4.2.2 observed shape (from the CI debug dump):
+                # uuid16 arrives as "0x2803,0x2a19,0x2803" - the declaration
+                # type injected around the entry uuid - so filter the
+                # declaration-type instances too, not just 0x2800/0x2801.
+                char_uuids = _split_multivalue(parts[9]) or [
+                    u for u in _split_multivalue(parts[8]) if u not in ("0x2800", "0x2801", "0x2803")
+                ]
+                if len(set(char_uuids)) == len(char_uuids):
+                    for value_handle, char_uuid in zip(entry_handles[1::2], char_uuids, strict=False):
+                        if char_uuid.startswith("0x"):
+                            handle_labels[f"0x{value_handle:04x}"] = _uuid_label_from_display(char_uuid)
+                        else:
+                            handle_labels[f"0x{value_handle:04x}"] = f"0x{char_uuid}"
+            pending_types.pop(cid, None)
+        elif opcode == "0x09" and pending_rbt_type is not None:
+            # Read By Type Response to a characteristic-UUID query: the entry
+            # handle itself is the value handle of the queried characteristic.
+            queried_label = _uuid_label_from_display(pending_rbt_type)
+            for entry_handle in _split_handles(parts[3]):
+                handle_labels.setdefault(f"0x{entry_handle:04x}", queried_label)
+            pending_types.pop(cid, None)
+    return services, service_ranges, handle_labels
 
 
 def make_ble_protocol_handlers(client: TSharkClient) -> dict[str, ProtocolHandler]:
@@ -675,6 +840,13 @@ def make_ble_protocol_handlers(client: TSharkClient) -> dict[str, ProtocolHandle
                 "btatt.uuid128",
                 "btatt.characteristic_uuid16",
                 "btatt.characteristic_uuid128",
+                "frame.interface_id",
+                "bthci_acl.chandle",
+                "bthci_acl.connect_in",
+                "btle.access_address",
+                "bluetooth.src",
+                "bluetooth.dst",
+                "frame.p2p_dir",
             ],
             display_filter="btatt",
             limit=limit,
@@ -695,6 +867,7 @@ def make_ble_protocol_handlers(client: TSharkClient) -> dict[str, ProtocolHandle
                     "timeline": [],
                     "services": [],
                     "handle_map": {},
+                    "handle_maps": {},
                     "operation_summary": {},
                     "summary": (
                         f"{OK} No ATT/GATT (btatt) traffic found in this capture "
@@ -715,8 +888,7 @@ def make_ble_protocol_handlers(client: TSharkClient) -> dict[str, ProtocolHandle
             parts = line.split("\t")
             if len(parts) < 3:  # need frame, time, opcode
                 continue
-            if len(parts) < 12:
-                parts.extend([""] * (12 - len(parts)))
+            _pad(parts, 19)
             opcode, operation = _parse_opcode(parts[2])
             parsed_rows.append((parts, opcode, operation))
 
@@ -724,109 +896,23 @@ def make_ble_protocol_handlers(client: TSharkClient) -> dict[str, ProtocolHandle
         # discovery exchange itself (Read By Group Type responses give service
         # ranges, Find Information responses give handle/UUID pairs, and Read By
         # Type responses to 0x2803 give characteristic declarations).
-        services: list[dict[str, Any]] = []
-        service_ranges: list[tuple[int, int, str]] = []
-        handle_labels: dict[str, str] = {}
-        pending_rbt_type: str | None = None
-        for parts, opcode, _operation in parsed_rows:
-            if opcode == "0x11":  # Read By Group Type Response: service table
-                starts = _split_handles(parts[3])
-                ends = _split_handles(parts[7])
-                # Request correlation injects the queried type (0x2800/0x2801) as a
-                # trailing uuid16 instance; drop it. 128-bit service UUIDs render
-                # into btatt.uuid128 instead of uuid16. Uncorrelated responses
-                # (synthetic captures) carry entry UUIDs in btatt.value as raw LE hex.
-                uuid128_list = _split_multivalue(parts[9])
-                uuid_display = [u for u in _split_multivalue(parts[8]) if u not in ("0x2800", "0x2801")]
-                uuid_value = _split_multivalue(parts[4])
-                if uuid128_list:
-                    uuid_pairs = [(u, f"0x{u}") for u in uuid128_list]
-                elif uuid_display:
-                    uuid_pairs = [(uuid, _uuid_label_from_display(uuid)) for uuid in uuid_display]
-                else:
-                    uuid_pairs = [(uuid_hex, _uuid_label(uuid_hex)) for uuid_hex in uuid_value]
-                # zip truncates to the shortest list, absorbing leftover injections.
-                for start, end, (uuid_raw, label) in zip(starts, ends, uuid_pairs, strict=False):
-                    services.append(
-                        {
-                            "start_handle": f"0x{start:04x}",
-                            "end_handle": f"0x{end:04x}",
-                            "uuid": uuid_raw,
-                            "label": label,
-                        }
-                    )
-                    service_ranges.append((start, end, label))
-            elif opcode == "0x05":  # Find Information Response: handle -> UUID
-                fit_handles = _split_handles(parts[3])
-                fit_uuids = _split_multivalue(parts[8])
-                # Correlated renderings inject extra uuid16 instances (service /
-                # characteristic UUID lookups per handle), so the counts only match
-                # for clean single-entry responses. Pair only when they do; the
-                # 0x2803 declaration path provides labels otherwise.
-                if len(fit_handles) == len(fit_uuids):
-                    for fit_handle, fit_uuid in zip(fit_handles, fit_uuids, strict=False):
-                        handle_labels.setdefault(f"0x{fit_handle:04x}", _uuid_label_from_display(fit_uuid))
-            elif opcode == "0x08":  # Read By Type Request: remember the queried type
-                pending_rbt_type = _strip(parts[8]) or None
-            elif opcode == "0x09" and pending_rbt_type == "0x2803":
-                # Read By Type Response to a Characteristic Declaration query.
-                # tshark 4.6+ renders each entry as raw bytes in btatt.value:
-                # properties(1) | value_handle(2) | uuid(2 or 16). Older releases
-                # (the Linux CI's 4.2) render structured fields instead: the value
-                # handle reuses btatt.handle (handles arrive as [decl, value_handle]
-                # per entry) and the UUID arrives in btatt.characteristic_uuid16/128.
-                entry_handles = _split_handles(parts[3])
-                entry_values = _split_multivalue(parts[4])
-                if entry_values:
-                    for _decl_handle, entry_value in zip(entry_handles, entry_values, strict=False):
-                        try:
-                            raw = bytes.fromhex(entry_value)
-                        except ValueError:
-                            continue
-                        if len(raw) < 5:
-                            continue
-                        value_handle = int.from_bytes(raw[1:3], "little")
-                        if len(raw) >= 19:  # 128-bit UUID
-                            uuid_int = int.from_bytes(raw[3:19], "little")
-                            handle_labels[f"0x{value_handle:04x}"] = f"0x{uuid_int:032x}"
-                        else:
-                            uuid_int = int.from_bytes(raw[3:5], "little")
-                            name = UUID_NAMES.get(uuid_int)
-                            handle_labels[f"0x{value_handle:04x}"] = (
-                                f"{name} (0x{uuid_int:04x})" if name else f"0x{uuid_int:04x}"
-                            )
-                else:
-                    # Structured-field shape on tshark <= 4.2 (confirmed in the
-                    # release-4.2 dissector): the value handle reuses btatt.handle
-                    # (handles arrive as [declaration, value_handle] per entry) and
-                    # the entry UUID renders into btatt.uuid16 / btatt.uuid128,
-                    # trailed by the generated queried-type instance. Filter the
-                    # injection like the RBGT path. Guard against tshark 4.6's
-                    # correlation, which can duplicate one uuid across entries
-                    # ("0x2a00,0x2a00" for a two-entry response): pairing those
-                    # would mislabel handles, and a wrong label is worse than none.
-                    # Only pair when the uuid instances are distinct.
-                    # tshark 4.2.2 observed shape (from the CI debug dump):
-                    # uuid16 arrives as "0x2803,0x2a19,0x2803" - the declaration
-                    # type injected around the entry uuid - so filter the
-                    # declaration-type instances too, not just 0x2800/0x2801.
-                    char_uuids = _split_multivalue(parts[9]) or [
-                        u for u in _split_multivalue(parts[8]) if u not in ("0x2800", "0x2801", "0x2803")
-                    ]
-                    if len(set(char_uuids)) == len(char_uuids):
-                        for value_handle, char_uuid in zip(entry_handles[1::2], char_uuids, strict=False):
-                            if char_uuid.startswith("0x"):
-                                handle_labels[f"0x{value_handle:04x}"] = _uuid_label_from_display(char_uuid)
-                            else:
-                                handle_labels[f"0x{value_handle:04x}"] = f"0x{char_uuid}"
-                pending_rbt_type = None
-            elif opcode == "0x09" and pending_rbt_type is not None:
-                # Read By Type Response to a characteristic-UUID query: the entry
-                # handle itself is the value handle of the queried characteristic.
-                queried_label = _uuid_label_from_display(pending_rbt_type)
-                for entry_handle in _split_handles(parts[3]):
-                    handle_labels.setdefault(f"0x{entry_handle:04x}", queried_label)
-                pending_rbt_type = None
+        # Resolve each connection/server independently, including request state.
+        context_rows: dict[tuple[str, str], list[tuple[list[str], str, str]]] = {}
+        for row in parsed_rows:
+            context_rows.setdefault(_gatt_context(row[0], row[1]), []).append(row)
+        discoveries = {context: _resolve_gatt_discovery(rows) for context, rows in context_rows.items()}
+        services = [
+            {**service, "connection": connection, "server": server}
+            for (connection, server), (resolved_services, _ranges, _labels) in discoveries.items()
+            for service in resolved_services
+        ]
+        handle_maps = {f"{connection}/{server}": labels for (connection, server), (_, _, labels) in discoveries.items()}
+        # Preserve the original flat map only when its namespace is unambiguous.
+        handle_labels = next(iter(handle_maps.values())) if len(handle_maps) == 1 else {}
+        if len(handle_maps) > 1 and (services or any(handle_maps.values())):
+            warnings.append(
+                "Multiple GATT servers: use handle_maps and each event's connection/server, not handle_map."
+            )
 
         # Second pass: build the annotated timeline.
         timeline: list[dict[str, Any]] = []
@@ -842,7 +928,9 @@ def make_ble_protocol_handlers(client: TSharkClient) -> dict[str, ProtocolHandle
             value = _strip(parts[4]) or None
             handles_info = _strip(parts[5]) or None
             cid = _strip(parts[6]) or None
-            attribute = handle_labels.get(handle) if handle else None
+            connection, server = _gatt_context(parts, opcode)
+            _services, service_ranges, labels = discoveries[(connection, server)]
+            attribute = labels.get(handle) if handle else None
             service: str | None = None
             handle_ints = _split_handles(handle) if handle else []
             if handle_ints:
@@ -860,6 +948,8 @@ def make_ble_protocol_handlers(client: TSharkClient) -> dict[str, ProtocolHandle
                     "value": value,
                     "handles_info": handles_info,
                     "cid": cid,
+                    "connection": connection,
+                    "server": server,
                     "attribute": attribute,
                     "service": service,
                 }
@@ -869,14 +959,16 @@ def make_ble_protocol_handlers(client: TSharkClient) -> dict[str, ProtocolHandle
         operation_summary = dict(sorted(operation_counts.items(), key=lambda kv: kv[1], reverse=True))
         mix = ", ".join(f"{name} x{count}" for name, count in operation_summary.items())
         summary = f"GATT timeline: {len(timeline)} ATT operation(s). Operation mix: {mix}"
-        if services or handle_labels:
-            summary += f" Resolved {len(services)} service(s) and {len(handle_labels)} labeled handle(s)."
+        label_count = sum(len(labels) for labels in handle_maps.values())
+        if services or label_count:
+            summary += f" Resolved {len(services)} service(s) and {label_count} labeled handle(s)."
 
         return envelope_response(
             data={
                 "timeline": timeline,
                 "services": services,
                 "handle_map": handle_labels,
+                "handle_maps": handle_maps if len(handle_maps) > 1 else {},
                 "operation_summary": operation_summary,
                 "summary": summary,
             },
@@ -920,6 +1012,7 @@ def make_ble_protocol_handlers(client: TSharkClient) -> dict[str, ProtocolHandle
                 "btle.link_layer_data.interval",  # 17
                 "btle.link_layer_data.timeout",  # 18
                 "btle.link_layer_data.channel_map",  # 19
+                "frame.interface_id",  # 20: connection handles are controller-local
             ],
             display_filter=conn_filter,
             limit=limit,
@@ -934,7 +1027,20 @@ def make_ble_protocol_handlers(client: TSharkClient) -> dict[str, ProtocolHandle
         if truncated:
             warnings.append(f"Connection rows hit the limit of {limit}; counts are lower bounds.")
 
-        sessions: dict[str, dict[str, Any]] = {}
+        active_sessions: dict[tuple[str, str], dict[str, Any]] = {}
+        sessions: list[dict[str, Any]] = []
+
+        def new_session(interface: str, handle: str) -> dict[str, Any]:
+            session: dict[str, Any] = {
+                "interface_id": interface,
+                "handle": handle,
+                "connect": None,
+                "updates": [],
+                "disconnect": None,
+            }
+            sessions.append(session)
+            return session
+
         ota_rows: list[dict[str, Any]] = []
         reason_counts: Counter[str] = Counter()
         rows = 0
@@ -943,7 +1049,8 @@ def make_ble_protocol_handlers(client: TSharkClient) -> dict[str, ProtocolHandle
             lines = data.strip().splitlines()
             start_idx = 1 if "frame.number" in lines[0] else 0
             for line in lines[start_idx:]:
-                parts = _pad(line.split("\t"), 20)
+                parts = _pad(line.split("\t"), 21)
+                interface = _strip(parts[20]) or "0"
                 rows += 1
                 code = _strip(parts[2])
                 if code == "0x3e":  # HCI LE meta: connection complete or parameter update
@@ -976,9 +1083,13 @@ def make_ble_protocol_handlers(client: TSharkClient) -> dict[str, ProtocolHandle
                             "supervision_timeout_ms": int(timeout_raw) * 10 if timeout_raw.isdigit() else None,
                             "status": _strip(parts[10]) or None,
                         }
-                        if handle not in sessions:
-                            sessions[handle] = {"connect": None, "updates": [], "disconnect": None}
-                        sessions[handle]["connect"] = entry
+                        # A handle can be reused immediately after disconnect.
+                        # Keep each attempt/session as a separate historical row;
+                        # failed attempts must not replace a still-active session.
+                        session = new_session(interface, handle)
+                        session["connect"] = entry
+                        if entry["status"] == "0x00":
+                            active_sessions[(interface, handle)] = session
                     elif subevent == "0x03":  # LE Connection Update Complete
                         update_interval = _strip(parts[7])
                         update = {
@@ -989,9 +1100,10 @@ def make_ble_protocol_handlers(client: TSharkClient) -> dict[str, ProtocolHandle
                             "supervision_timeout": _strip(parts[9]) or None,
                             "interval_ms": round(int(update_interval) * 1.25, 2) if update_interval.isdigit() else None,
                         }
-                        if handle not in sessions:
-                            sessions[handle] = {"connect": None, "updates": [], "disconnect": None}
-                        sessions[handle]["updates"].append(update)
+                        key = (interface, handle)
+                        if key not in active_sessions:
+                            active_sessions[key] = new_session(interface, handle)
+                        active_sessions[key]["updates"].append(update)
                 elif code == "0x05":  # HCI Disconnect Complete: reason attribution
                     handle = _strip(parts[4])
                     if not handle:
@@ -1002,9 +1114,9 @@ def make_ble_protocol_handlers(client: TSharkClient) -> dict[str, ProtocolHandle
                         time_value = float(_strip(parts[1]))
                     except ValueError:
                         time_value = None
-                    if handle not in sessions:
-                        sessions[handle] = {"connect": None, "updates": [], "disconnect": None}
-                    session = sessions[handle]
+                    # Closing removes the active association, not the history.
+                    closed_session = active_sessions.pop((interface, handle), None)
+                    session = closed_session if closed_session is not None else new_session(interface, handle)
                     session["disconnect"] = {"reason": reason_name, "time": time_value}
                     connect_time = session["connect"]["time"] if session["connect"] else None
                     if connect_time is not None and time_value is not None:
@@ -1039,8 +1151,12 @@ def make_ble_protocol_handlers(client: TSharkClient) -> dict[str, ProtocolHandle
                     )
 
         connection_rows: list[dict[str, Any]] = []
-        for handle, session in sorted(sessions.items()):
-            row: dict[str, Any] = {"handle": handle, "connect": session.get("connect")}
+        for session in sessions:
+            row: dict[str, Any] = {
+                "handle": session["handle"],
+                "interface_id": session["interface_id"],
+                "connect": session.get("connect"),
+            }
             row["parameter_updates"] = session.get("updates", [])
             row["disconnect"] = session.get("disconnect")
             row["session_duration_s"] = session.get("session_duration_s")

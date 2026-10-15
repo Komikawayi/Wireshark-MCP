@@ -385,3 +385,59 @@ async def test_real_pcap_ble_pairing(pcap_fixtures: dict[str, str]) -> None:
     assert finding["severity"] == "low"
     assert finding["confidence"] == "likely"
     assert "Just Works" in data["summary"]
+
+
+@pytest.mark.asyncio
+async def test_real_pcap_ble_interleaved_connections_and_handle_reuse(tmp_path: Path) -> None:
+    """Real dissection must preserve H4 directions, connection epochs and ATT peers."""
+    import struct
+
+    from fixtures.generate_pcaps import make_h4_event_packet, make_pcap_header, make_pcap_packet
+
+    def connect(handle: int, peer: str) -> bytes:
+        params = bytes.fromhex("0100") + struct.pack("<H", handle) + bytes.fromhex("0000")
+        params += bytes.fromhex(peer.replace(":", ""))[::-1] + struct.pack("<HHH", 24, 0, 72) + b"\x05"
+        return make_h4_event_packet(1, 0x3E, params)
+
+    def att(handle: int, direction: int, pdu: str) -> bytes:
+        payload = bytes.fromhex(pdu)
+        l2cap = struct.pack("<HH", len(payload), 4) + payload
+        return struct.pack(">IB", direction, 2) + struct.pack("<HH", 0x2000 | handle, len(l2cap)) + l2cap
+
+    frames = [
+        connect(12, "11:22:33:44:55:66"),
+        connect(13, "aa:bb:cc:dd:ee:ff"),
+        att(12, 0, "080100ffff002a"),  # Device Name query
+        att(13, 0, "080100ffff192a"),  # Battery Level query, interleaved
+        att(12, 1, "0903020041"),
+        att(13, 1, "0903020064"),
+        att(12, 1, "1b020042"),
+        att(13, 1, "1b020063"),
+        make_h4_event_packet(1, 5, bytes.fromhex("000c0013")),
+        connect(12, "22:33:44:55:66:77"),  # same controller handle, different session
+        att(12, 1, "1b02002a"),  # no discovery for this peer: never inherit old labels
+    ]
+    pcap = tmp_path / "interleaved-h4.pcap"
+    pcap.write_bytes(
+        make_pcap_header(linktype=201)
+        + b"".join(make_pcap_packet(frame, sec=9000, usec=i * 10000) for i, frame in enumerate(frames))
+    )
+    client = TSharkClient()
+    handlers = make_ble_protocol_handlers(client)
+    gatt = parse_tool_result(await handlers["ble_gatt_timeline"](str(pcap), 50))
+    assert gatt["success"] is True
+    events = {e["frame"]: e for e in gatt["data"]["timeline"]}
+    assert events[7]["attribute"] == "Device Name (0x2a00)"
+    assert events[8]["attribute"] == "Battery Level (0x2a19)"
+    assert events[11]["attribute"] is None
+    assert events[7]["connection"] != events[8]["connection"]
+    assert events[7]["connection"] != events[11]["connection"]
+
+    connections = parse_tool_result(await handlers["ble_connections"](str(pcap), 50))
+    assert connections["success"] is True
+    sessions = connections["data"]["connections"]
+    assert [s["connect"]["frame"] for s in sessions] == [1, 2, 10]
+    assert sessions[0]["session_duration_s"] == pytest.approx(0.08)
+    assert sessions[1]["disconnect"] is None
+    assert sessions[2]["disconnect"] is None
+    assert sessions[2]["parameter_updates"] == []

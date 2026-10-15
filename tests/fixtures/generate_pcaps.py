@@ -146,13 +146,15 @@ def make_att_acl_packet(direction: int, att_pdu: bytes) -> bytes:
     """
     l2cap = struct.pack("<HH", len(att_pdu), 0x0004) + att_pdu  # length, CID 0x0004 (ATT)
     acl = struct.pack("<HH", 0x2000 | 0x000C, len(l2cap)) + l2cap  # handle 0x000C, PB first-auto-flushable
-    return struct.pack("<IB", direction, 0x02) + acl  # 4B direction phdr + H4 type ACL
+    # LINKTYPE_BLUETOOTH_HCI_H4_WITH_PHDR uses a network-order direction word,
+    # independent of the pcap record header's byte order.
+    return struct.pack(">IB", direction, 0x02) + acl
 
 
 def make_h4_event_packet(direction: int, event_code: int, params: bytes) -> bytes:
     """HCI H4 event packet for linktype 201 (H4 with phdr)."""
     event = bytes([event_code, len(params)]) + params
-    return struct.pack("<IB", direction, 0x04) + event  # 4B direction phdr + H4 type event
+    return struct.pack(">IB", direction, 0x04) + event
 
 
 def build_all_fixtures(output_dir: Path) -> dict[str, Path]:
@@ -372,7 +374,7 @@ def build_all_fixtures(output_dir: Path) -> dict[str, Path]:
         pdu = bytes.fromhex(hex_pdu)
         l2cap = struct.pack("<HH", len(pdu), 0x0006) + pdu  # length, CID 0x0006 (SMP)
         acl = struct.pack("<HH", 0x2000 | 0x000C, len(l2cap)) + l2cap
-        return struct.pack("<IB", direction, 0x02) + acl
+        return struct.pack(">IB", direction, 0x02) + acl
 
     confirm_value = "00" * 16
     random_value = "11" * 16
