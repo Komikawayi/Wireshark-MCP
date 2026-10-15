@@ -267,7 +267,9 @@ async def test_real_pcap_gatt_timeline(pcap_fixtures: dict[str, str]) -> None:
     assert by_frame[14]["operation"] == "Write Request"
     assert by_frame[14]["handle"] == "0x000c"
     assert by_frame[14]["value"] in ("010203", None)  # rendering is version-sensitive
-    assert by_frame[15]["handle"] is None
+    # Write Response carries no handle of its own; tshark 4.6 leaves it None
+    # while 4.2 request-correlates it to the request's handle (0x000c).
+    assert by_frame[15]["handle"] in (None, "0x000c")
     assert by_frame[16]["operation"] == "Handle Value Notification"
     assert by_frame[16]["handle"] == "0x000e"
     assert by_frame[16]["attribute"] == "Battery Level (0x2a19)"
