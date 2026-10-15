@@ -26,6 +26,14 @@ For an unfamiliar capture, `wireshark_open_file` obtains metadata and protocol r
 
 Read [playbooks.md](references/playbooks.md) only for the relevant investigation branch. Check uncertain field names and filter syntax through available protocol-field/display-filter resources or the installed engine; reference examples are not an exhaustive field catalog.
 
+For BLE, select only the relevant `wireshark_analyze_protocol` value: `ble` for
+raw overview, `ble_devices` for advertisers, `ble_scan_activity` for scanners,
+`ble_gatt_timeline` for ATT operations, `ble_connections` for connection sessions,
+or `ble_pairing` for SMP negotiation. Start with `limit=20`, then expand only to
+resolve missing evidence; do not execute every recommendation. In multi-link
+GATT results, use each event's `connection` and `server` with `handle_maps`;
+attribute handles are not global across peers or reconnections.
+
 ## Investigation loop
 
 1. State the current question or hypothesis briefly. For causal or security claims, consider the most plausible alternative; factual counts do not need invented hypotheses.
