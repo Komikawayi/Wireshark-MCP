@@ -92,12 +92,12 @@ wireshark-mcp install   # 从检测到的 MCP 客户端中选择并配置
 | **数据提取** | HTTP 请求、DNS 查询、任意字段提取、对象导出 | 4 |
 | **统计** | 聚合/分组/去重计数/Top-K/时间分桶、协议层次、端点、会话、I/O 图、专家信息、服务响应时间、流图 | 8 |
 | **安全与异常** | 凭据扫描、端口扫描、DNS 隧道、DoS、信标、外泄、协议异常、YARA | 8 |
-| **协议分析** | `wireshark_analyze_protocol`（20 种协议）、TCP 健康、ARP 欺骗 | 3 |
+| **协议分析** | `wireshark_analyze_protocol`（25 种协议，含 BLE 配对分析、广播设备清单、扫描者检测、带句柄语义的 ATT/GATT 时间线、连接生命周期）、TCP 健康、ARP 欺骗 | 3 |
 | **解密与解析** | TLS/WPA 解密、解密校验、decode-as、协议偏好设置 | 5 |
 | **取证与富化** | TLS 指纹、文件特征扫描、GeoIP | 3 |
 | **文件操作、抓包与套件** | 实时抓包、接口列表、合并、过滤保存、editcap 裁剪/分割/去重/时移、帧提取、text2pcap、能力查询 | 11 |
 
-20 种协议由一个工具覆盖，而不是 20 个工具各覆盖一种：`wireshark_analyze_protocol` 接受 `protocol` 参数（`tls_handshakes`、`mqtt`、`modbus`、`s7comm`、`zigbee`、`wifi`、`rtp`、`kerberos` 等），并为其套用正确的字段与显示过滤器。字段名正是关键——`s7comm.param.item.dbnum` 不该由调用方去猜，而猜错时返回的空结果看起来和"干净的流量"没有区别。
+25 种协议由一个工具覆盖，而不是 25 个工具各覆盖一种：`wireshark_analyze_protocol` 接受 `protocol` 参数（`tls_handshakes`、`mqtt`、`modbus`、`s7comm`、`zigbee`、`wifi`、`rtp`、`kerberos` 等），并为其套用正确的字段与显示过滤器。字段名正是关键——`s7comm.param.item.dbnum` 不该由调用方去猜，而猜错时返回的空结果看起来和"干净的流量"没有区别。
 
 服务器仅需 `tshark` 即可启动。可选工具（`capinfos`、`mergecap`、`editcap`、`dumpcap`、`text2pcap`）自动检测，存在时启用额外功能。
 
