@@ -71,7 +71,7 @@ def example():
 def test_prepared_tasks_do_not_disclose_grading_or_injection_recipes():
     import json
 
-    manifest = json.loads(MATRIX.MANIFEST.read_text())
+    manifest = json.loads(MATRIX.MANIFEST.read_text(encoding="utf-8"))
     tasks = MATRIX.blind_tasks(manifest)
     assert len(tasks) == 180
     assert len({(t["scenario_id"], t["variant"], t["trial"]) for t in tasks}) == 180

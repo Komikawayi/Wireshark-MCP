@@ -61,9 +61,9 @@ def test_manifest_version_skew_fails(kind, tmp_path):
     with ZipFile(archive) as bundle:
         bundle.extractall(root)
     manifest = root / f".{kind}-plugin/plugin.json"
-    data = json.loads(manifest.read_text())
+    data = json.loads(manifest.read_text(encoding="utf-8"))
     data["version"] = "0.0.0"
-    manifest.write_text(json.dumps(data))
+    manifest.write_text(json.dumps(data), encoding="utf-8")
     with pytest.raises(ValueError, match="version"):
         module.check(root)
 

@@ -179,7 +179,9 @@ def main(argv: list[str] | None = None) -> int:
             for name in ("stdout.bin", "stderr.bin")
         },
     }
-    (args.output_dir / "execution.json").write_text(json.dumps(record, ensure_ascii=False, indent=2) + "\n")
+    (args.output_dir / "execution.json").write_text(
+        json.dumps(record, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
     print(
         json.dumps(
             {

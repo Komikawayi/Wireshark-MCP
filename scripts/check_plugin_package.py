@@ -27,7 +27,7 @@ FILES = (
 
 
 def load(root: Path, path: str) -> dict:
-    return json.loads((root / path).read_text())
+    return json.loads((root / path).read_text(encoding="utf-8"))
 
 
 def local_path(root: Path, value: str) -> Path:
@@ -40,7 +40,7 @@ def local_path(root: Path, value: str) -> Path:
 
 
 def check(root: Path) -> dict:
-    source = ast.parse((root / "src/wireshark_mcp/__init__.py").read_text())
+    source = ast.parse((root / "src/wireshark_mcp/__init__.py").read_text(encoding="utf-8"))
     version = next(
         ast.literal_eval(node.value)
         for node in source.body
@@ -57,7 +57,9 @@ def check(root: Path) -> dict:
         actual = {p.name for p in directory.iterdir() if p.is_dir() and (p / "SKILL.md").is_file()}
         if actual != skills:
             raise ValueError("plugin does not expose every canonical skill")
-    codex_mcp = json.loads(local_path(root, native["mcpServers"]).read_text())["mcpServers"]["wireshark-mcp"]
+    codex_mcp = json.loads(local_path(root, native["mcpServers"]).read_text(encoding="utf-8"))["mcpServers"][
+        "wireshark-mcp"
+    ]
     claude_mcp = claude["mcpServers"]["wireshark-mcp"]
     for entry in (codex_mcp, claude_mcp):
         if entry["command"] != "uv" or not {"run", "--locked", "--no-dev", "wireshark-mcp", "stdio"} <= set(

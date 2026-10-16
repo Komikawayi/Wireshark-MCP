@@ -43,11 +43,13 @@ async def smoke(archive: Path, client_name: str, *, timeout: float) -> dict:
             raise ValueError("plugin archive includes a pre-existing environment; cold start not established")
         lock_hash = hashlib.sha256((root / "uv.lock").read_bytes()).hexdigest()
         if client_name == "codex":
-            manifest = json.loads((root / ".codex-plugin/plugin.json").read_text())
-            config = json.loads((root / manifest["mcpServers"]).read_text())["mcpServers"]["wireshark-mcp"]
+            manifest = json.loads((root / ".codex-plugin/plugin.json").read_text(encoding="utf-8"))
+            config = json.loads((root / manifest["mcpServers"]).read_text(encoding="utf-8"))["mcpServers"][
+                "wireshark-mcp"
+            ]
             cwd = root / config["cwd"]
         else:
-            manifest = json.loads((root / ".claude-plugin/plugin.json").read_text())
+            manifest = json.loads((root / ".claude-plugin/plugin.json").read_text(encoding="utf-8"))
             config = manifest["mcpServers"]["wireshark-mcp"]
             cwd = workspace
         args = [arg.replace("${CLAUDE_PLUGIN_ROOT}", str(root)) for arg in config["args"]]
@@ -148,7 +150,7 @@ def main(argv: list[str] | None = None) -> int:
         except Exception as exc:
             result = {"client": name, "status": "failed", "error": str(exc)}
         report["results"].append(result)
-    args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
+    args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     passed = sum(item["status"] == "passed" for item in report["results"])
     print(f"Plugin runtime smoke: {passed}/2 cold starts passed; report: {args.output.resolve()}")
     return int(passed != 2)

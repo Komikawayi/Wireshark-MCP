@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def check(wheel: Path) -> int:
     source = ROOT / "skills"
-    manifest = json.loads((source / "manifest.json").read_text())
+    manifest = json.loads((source / "manifest.json").read_text(encoding="utf-8"))
     expected = {item["name"] for item in manifest["skills"]}
     with ZipFile(wheel) as archive:
         names = set(archive.namelist())

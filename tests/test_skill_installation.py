@@ -29,7 +29,7 @@ def test_clean_checkout_installs_both_skills_and_repairs_windows_link_files(tmp_
     for name in ("tshark-cli-analysis", "wireshark-traffic-analysis"):
         path = repo / ".agents/skills" / name
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("../../skills/" + name)
+        path.write_text("../../skills/" + name, encoding="utf-8")
     cmd = [sys.executable, str(repo / "scripts/sync_skills.py")]
     before = subprocess.run([*cmd, "--check", "--require-installed"], capture_output=True, timeout=20)
     assert before.returncode == 1
@@ -73,13 +73,36 @@ def test_packaged_broken_reference_is_detected(tmp_path: Path, monkeypatch):
         module().probe()
 
 
+@pytest.mark.parametrize("default_encoding", ["cp1252", "ascii"])
+def test_installed_resources_use_utf8_under_legacy_locale(tmp_path: Path, monkeypatch, default_encoding):
+    import wireshark_mcp
+
+    package = tmp_path / "installed package"
+    shutil.copytree(ROOT / "skills", package / "skills", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+    (package / "skills/tshark-cli-analysis/references/locale.md").write_text(
+        "# 流量分析：UTF-8 — evidence\n", encoding="utf-8"
+    )
+    monkeypatch.setattr(wireshark_mcp, "__file__", str(package / "__init__.py"))
+    checker = module()
+    monkeypatch.setattr(checker.shutil, "which", lambda name: None)
+    read_text = Path.read_text
+
+    def legacy_read_text(path, *args, **kwargs):
+        if not args:
+            kwargs.setdefault("encoding", default_encoding)
+        return read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", legacy_read_text)
+    assert checker.probe()["status"] == "passed"
+
+
 def test_short_capability_router_keeps_full_option_index_reachable():
     import re
 
     refs = ROOT / "skills/tshark-cli-analysis/references"
-    catalog = json.loads((refs / "capability-catalog.json").read_text())
-    router = (refs / "capability-map.md").read_text()
-    index = (refs / "option-index.md").read_text()
+    catalog = json.loads((refs / "capability-catalog.json").read_text(encoding="utf-8"))
+    router = (refs / "capability-map.md").read_text(encoding="utf-8")
+    index = (refs / "option-index.md").read_text(encoding="utf-8")
     options = set(re.findall(r"^\| `([^`]+)` \|", index, re.MULTILINE))
     assert options == set(catalog["options"])
     assert "option-index.md" in router

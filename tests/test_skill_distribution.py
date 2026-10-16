@@ -103,8 +103,18 @@ def test_sync_detects_same_size_same_mtime_content_change(tmp_path: Path) -> Non
     source, target = tmp_path / "source", tmp_path / "target"
     source.mkdir()
     target.mkdir()
-    (source / "SKILL.md").write_text("AAAA")
-    (target / "SKILL.md").write_text("BBBB")
+    (source / "SKILL.md").write_text("AAAA", encoding="utf-8")
+    (target / "SKILL.md").write_text("BBBB", encoding="utf-8")
     stat = (source / "SKILL.md").stat()
     os.utime(target / "SKILL.md", ns=(stat.st_atime_ns, stat.st_mtime_ns))
     assert not module.check_tree_matches(source, target)
+
+
+def test_sdist_preserves_canonical_skills_instead_of_discovery_aliases():
+    import tomlkit
+
+    project = tomlkit.parse((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    sdist = project["tool"]["hatch"]["build"]["targets"]["sdist"]
+    assert "/.agents/skills" in sdist["exclude"]
+    assert sdist["skip-excluded-dirs"] is True
+    assert sdist["force-include"]["skills"] == "skills"

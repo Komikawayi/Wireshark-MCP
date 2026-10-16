@@ -85,7 +85,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         inventory = collect(args.tshark)
-        catalog = json.loads(CATALOG.read_text())
+        catalog = json.loads(CATALOG.read_text(encoding="utf-8"))
         gaps = coverage(inventory, catalog)
         inventory["documentation_gaps"] = gaps
         inventory["baseline_unavailable"] = {kind: sorted(set(catalog[kind]) - set(inventory[kind])) for kind in gaps}

@@ -37,13 +37,13 @@ RUNNER = _module("run_tshark", CLI / "scripts/run_tshark.py")
 def test_all_skill_reference_links_resolve() -> None:
     for skill in (CLI, MCP):
         for document in skill.rglob("*.md"):
-            for target in re.findall(r"\]\(([^)]+)\)", document.read_text()):
+            for target in re.findall(r"\]\(([^)]+)\)", document.read_text(encoding="utf-8")):
                 if "://" not in target:
                     assert (document.parent / target.split("#")[0]).exists(), (document, target)
 
 
 def test_catalog_entries_route_to_existing_guides() -> None:
-    catalog = json.loads((CLI / "references/capability-catalog.json").read_text())
+    catalog = json.loads((CLI / "references/capability-catalog.json").read_text(encoding="utf-8"))
     for kind in ("options", "reports", "statistics"):
         assert catalog[kind]
         for name, guide in catalog[kind].items():
@@ -71,7 +71,7 @@ def test_inventory_parser_and_future_gap_detection() -> None:
 def test_mcp_example_calls_match_actual_schemas() -> None:
     app = _build_server(host="127.0.0.1", port=8080, log_level="ERROR")
     schemas = {tool.name: tool.input_schema for tool in asyncio.run(app.list_tools())}
-    lines = (MCP / "references/query-patterns.md").read_text().splitlines()
+    lines = (MCP / "references/query-patterns.md").read_text(encoding="utf-8").splitlines()
     count = 0
     for line in lines:
         if not line.startswith("wireshark_"):
@@ -118,7 +118,7 @@ def test_runner_separates_unbudgeted_side_effects(args: list[str]) -> None:
 @pytest.mark.skipif(shutil.which("tshark") is None, reason="requires installed tshark")
 def test_installed_tshark_capabilities_have_documented_routes() -> None:
     inventory = INVENTORY.collect(shutil.which("tshark"))
-    catalog = json.loads((CLI / "references/capability-catalog.json").read_text())
+    catalog = json.loads((CLI / "references/capability-catalog.json").read_text(encoding="utf-8"))
     # A different release may add names. Make them explicit in a failing gate.
     gaps = INVENTORY.coverage(inventory, catalog)
     assert not any(gaps.values()), gaps
@@ -159,7 +159,7 @@ def test_real_cli_count_json_and_bounded_record(tmp_path: Path) -> None:
         )
         == 0
     )
-    record = json.loads((destination / "execution.json").read_text())
+    record = json.loads((destination / "execution.json").read_text(encoding="utf-8"))
     assert record["coverage"]["status"] == "complete"
     assert not record["input_changed"]
     assert len((destination / "stdout.bin").read_bytes().splitlines()) == 27
@@ -178,10 +178,10 @@ def test_wheel_validator_rejects_a_missing_skill_resource(tmp_path: Path, monkey
     checker = _module("check_skill_package", ROOT / "scripts/check_skill_package.py")
     source = tmp_path / "skills/example"
     source.mkdir(parents=True)
-    (source / "SKILL.md").write_text("a skill")
-    (source / "helper.py").write_text("print('helper')")
+    (source / "SKILL.md").write_text("a skill", encoding="utf-8")
+    (source / "helper.py").write_text("print('helper')", encoding="utf-8")
     manifest = tmp_path / "skills/manifest.json"
-    manifest.write_text(json.dumps({"skills": [{"name": "example"}]}))
+    manifest.write_text(json.dumps({"skills": [{"name": "example"}]}), encoding="utf-8")
     monkeypatch.setattr(checker, "ROOT", tmp_path)
     wheel = tmp_path / "test.whl"
     with ZipFile(wheel, "w") as archive:
@@ -192,9 +192,9 @@ def test_wheel_validator_rejects_a_missing_skill_resource(tmp_path: Path, monkey
 
 
 def test_every_catalog_option_has_execution_guidance() -> None:
-    catalog = json.loads((CLI / "references/capability-catalog.json").read_text())
+    catalog = json.loads((CLI / "references/capability-catalog.json").read_text(encoding="utf-8"))
     for option, guide in catalog["options"].items():
-        assert option in (CLI / "references" / guide).read_text(), (option, guide)
+        assert option in (CLI / "references" / guide).read_text(encoding="utf-8"), (option, guide)
 
 
 @pytest.mark.skipif(shutil.which("tshark") is None, reason="requires installed tshark")

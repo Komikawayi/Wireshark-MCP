@@ -159,7 +159,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--trace-dir", type=Path, help="collector-owned traces/<variant>/")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args(argv)
-    manifest = json.loads(args.manifest.read_text())
+    manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
     if args.repeats < 1:
         parser.error("--repeats must be positive")
     if args.prepare:
@@ -169,14 +169,14 @@ def main(argv: list[str] | None = None) -> int:
         args.prepare.mkdir(parents=True, exist_ok=False)
         for task in tasks:
             name = f"{task['scenario_id']}--{task['variant']}--{task['trial']}.json"
-            (args.prepare / name).write_text(json.dumps(task, ensure_ascii=False, indent=2) + "\n")
+            (args.prepare / name).write_text(json.dumps(task, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         plan = {
             "status": "prepared_not_executed",
             "task_count": len(tasks),
             "manifest_sha256": hashlib.sha256(args.manifest.read_bytes()).hexdigest(),
             "fixture_adapter_required": sorted({t["input_id"] for t in tasks if t["input_status"] != "file"}),
         }
-        (args.prepare / "plan.json").write_text(json.dumps(plan, ensure_ascii=False, indent=2) + "\n")
+        (args.prepare / "plan.json").write_text(json.dumps(plan, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         print(f"Prepared {len(tasks)} blind tasks; no Agent run executed: {args.prepare.resolve()}")
         return 0
     if not args.variant or not args.trace_dir or not args.output:
@@ -191,7 +191,7 @@ def main(argv: list[str] | None = None) -> int:
         variants[name] = engine._load_runs(Path(path))
         traces[name] = engine.load_traces(args.trace_dir / name, variants[name])
     report = check_matrix(manifest, variants, traces, repeats=args.repeats)
-    args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
+    args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(
         f"Agent matrix: {report['received_runs']}/{report['expected_runs']} runs; collection_complete={report['collection_complete']}"
     )

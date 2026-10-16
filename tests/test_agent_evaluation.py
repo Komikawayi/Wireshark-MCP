@@ -215,20 +215,20 @@ def test_trace_artifact_tampering_and_path_escape_fail(tmp_path: Path) -> None:
     import hashlib
 
     result = tmp_path / "result.txt"
-    result.write_text("actual output")
+    result.write_text("actual output", encoding="utf-8")
     trace = {"calls": [{"result_file": "result.txt", "result_sha256": hashlib.sha256(result.read_bytes()).hexdigest()}]}
     sidecar = tmp_path / "trace.json"
-    sidecar.write_text(json.dumps(trace))
+    sidecar.write_text(json.dumps(trace), encoding="utf-8")
     run = {"trace_id": "trace.json", "trace_sha256": hashlib.sha256(sidecar.read_bytes()).hexdigest()}
     assert "load_error" not in MODULE.load_traces(tmp_path, [run])["trace.json"]
-    result.write_text("modified output")
+    result.write_text("modified output", encoding="utf-8")
     assert "load_error" in MODULE.load_traces(tmp_path, [run])["trace.json"]
     escaped = {"trace_id": "../outside.json", "trace_sha256": "a" * 64}
     assert "load_error" in MODULE.load_traces(tmp_path, [escaped])["../outside.json"]
 
 
 def test_result_example_is_valid_json() -> None:
-    value = json.loads((ROOT / "evals/agent-traffic-analysis/result.example.json").read_text())
+    value = json.loads((ROOT / "evals/agent-traffic-analysis/result.example.json").read_text(encoding="utf-8"))
     assert value["runs"]
 
 
@@ -261,7 +261,7 @@ def test_capture_digest_is_checked_against_actual_input(tmp_path: Path) -> None:
         "calls": [{"result_file": "result.txt", "result_sha256": hashlib.sha256(result.read_bytes()).hexdigest()}],
     }
     path = tmp_path / "trace.json"
-    path.write_text(json.dumps(trace))
+    path.write_text(json.dumps(trace), encoding="utf-8")
     run = {"trace_id": "trace.json", "trace_sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
     assert "load_error" not in MODULE.load_traces(tmp_path, [run])["trace.json"]
     capture.write_bytes(b"changed input")

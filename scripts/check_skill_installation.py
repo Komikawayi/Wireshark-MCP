@@ -23,7 +23,7 @@ def probe(*, require_engine: bool = False) -> dict:
 
     package = Path(wireshark_mcp.__file__).resolve().parent
     source = package / "skills"
-    manifest = json.loads((source / "manifest.json").read_text())
+    manifest = json.loads((source / "manifest.json").read_text(encoding="utf-8"))
     names = {item["name"] for item in manifest["skills"]}
     if names != {"wireshark-traffic-analysis", "tshark-cli-analysis"}:
         raise ValueError(f"unexpected packaged skills: {names}")
@@ -31,10 +31,10 @@ def probe(*, require_engine: bool = False) -> dict:
     executions = []
     for name in sorted(names):
         skill = source / name
-        if f"name: {name}\n" not in (skill / "SKILL.md").read_text():
+        if f"name: {name}\n" not in (skill / "SKILL.md").read_text(encoding="utf-8"):
             raise ValueError(f"invalid packaged entrypoint: {name}")
         for document in skill.rglob("*.md"):
-            for target in re.findall(r"\]\(([^)]+)\)", document.read_text()):
+            for target in re.findall(r"\]\(([^)]+)\)", document.read_text(encoding="utf-8")):
                 if "://" not in target and not (document.parent / target.split("#")[0]).exists():
                     raise ValueError(f"broken packaged reference: {document}: {target}")
         if not (skill / "agents/openai.yaml").is_file():
@@ -93,7 +93,7 @@ def probe(*, require_engine: bool = False) -> dict:
             text=True,
             timeout=20,
         )
-        record = json.loads((missing / "execution.json").read_text())
+        record = json.loads((missing / "execution.json").read_text(encoding="utf-8"))
         executions.append(
             {
                 "kind": "missing-engine-simulation",
@@ -141,9 +141,9 @@ def probe(*, require_engine: bool = False) -> dict:
                     "kind": "native",
                     "argv": result.args,
                     "exit_code": result.returncode,
-                    "stdout": (run / "stdout.bin").read_text(),
-                    "stderr": (run / "stderr.bin").read_text(),
-                    "record": json.loads((run / "execution.json").read_text()),
+                    "stdout": (run / "stdout.bin").read_text(encoding="utf-8"),
+                    "stderr": (run / "stderr.bin").read_text(encoding="utf-8"),
+                    "record": json.loads((run / "execution.json").read_text(encoding="utf-8")),
                 }
             )
             checks.append("native:first-offline-query")
@@ -228,7 +228,7 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError:
         report = {"status": "failed", "error": "probe returned no JSON", "stdout": result.stdout}
     report.update({"argv": command, "exit_code": result.returncode, "stderr": result.stderr})
-    args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
+    args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"Installed skill smoke: {report['status']}; report: {args.output.resolve()}")
     return int(result.returncode != 0 or report["status"] != "passed")
 
