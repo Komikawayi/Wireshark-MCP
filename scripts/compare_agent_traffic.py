@@ -47,6 +47,17 @@ def summarize_variant(evaluation: dict[str, Any], runs: list[dict[str, Any]]) ->
     )
     input_tokens = passed_metrics("input_tokens")
     output_tokens = passed_metrics("output_tokens")
+    distributions = {}
+    for key in ("tool_calls", "elapsed_ms", "peak_rss_bytes", "input_tokens", "output_tokens"):
+        values = passed_metrics(key)
+        distributions[key] = {
+            "samples": len(values),
+            "missing": len(passed) - len(values),
+            "min": min(values) if values else None,
+            "median": statistics.median(values) if values else None,
+            "max": max(values) if values else None,
+            "sample_stdev": round(statistics.stdev(values), 2) if len(values) > 1 else None,
+        }
     return {
         "runs": len(results),
         "runs_passed": len(passed),
@@ -55,6 +66,7 @@ def summarize_variant(evaluation: dict[str, Any], runs: list[dict[str, Any]]) ->
         "missing_scenarios": evaluation["summary"]["missing_scenarios"],
         "unknown_scenarios": evaluation["summary"]["unknown_scenarios"],
         "eligible_efficiency_runs": len(passed),
+        "efficiency_distributions": distributions,
         "mean_tool_calls": _mean(passed_metrics("tool_calls")),
         "mean_elapsed_ms": _mean(passed_metrics("elapsed_ms")),
         "mean_peak_rss_bytes": _mean(passed_metrics("peak_rss_bytes")),
@@ -66,7 +78,9 @@ def summarize_variant(evaluation: dict[str, Any], runs: list[dict[str, Any]]) ->
     }
 
 
-def compare(manifest: dict[str, Any], inputs: list[tuple[str, list[dict[str, Any]]]]) -> dict[str, Any]:
+def compare(
+    manifest: dict[str, Any], inputs: list[tuple[str, list[dict[str, Any]]]], traces: dict[str, Any] | None = None
+) -> dict[str, Any]:
     evaluator = _load_evaluator()
     variants: dict[str, Any] = {}
     details: dict[str, Any] = {}
@@ -74,7 +88,7 @@ def compare(manifest: dict[str, Any], inputs: list[tuple[str, list[dict[str, Any
         if name in variants:
             raise ValueError(f"Duplicate variant name: {name}")
         normalized = [{**run, "variant": name} for run in runs]
-        evaluation = evaluator.evaluate(manifest, normalized)
+        evaluation = evaluator.evaluate(manifest, normalized, (traces or {}).get(name, {}))
         variants[name] = summarize_variant(evaluation, normalized)
         details[name] = evaluation["results"]
     return {
@@ -98,6 +112,9 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--variant", action="append", type=_variant_argument, required=True)
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
     parser.add_argument("--output", type=Path)
+    parser.add_argument(
+        "--trace-dir", type=Path, help="directory containing one harness-owned subdirectory per variant"
+    )
     return parser
 
 
@@ -106,7 +123,11 @@ def main(argv: list[str] | None = None) -> int:
     evaluator = _load_evaluator()
     manifest = evaluator._load_json(args.manifest)
     inputs = [(name, evaluator._load_runs(path)) for name, path in args.variant]
-    report = compare(manifest, inputs)
+    traces = {
+        name: evaluator.load_traces(args.trace_dir / name if args.trace_dir else path.parent / "traces", runs)
+        for (name, path), (_, runs) in zip(args.variant, inputs, strict=True)
+    }
+    report = compare(manifest, inputs, traces)
     rendered = json.dumps(report, ensure_ascii=False, indent=2) + "\n"
     if args.output:
         args.output.write_text(rendered, encoding="utf-8")

@@ -159,7 +159,7 @@ WIRESHARK_MCP_GUIDE = """\
 
 ## Analysis Workflow
 
-1. **Start with capture-wide context**: Use `wireshark_open_file` to inspect the file and see recommended tools
+1. **Start with the user's question**: For unfamiliar input use `wireshark_open_file`; for a known frame/stream/symptom query that scope directly
 2. **Get file overview**: Use `wireshark_get_file_info` when `capinfos` is available
 3. **Protocol hierarchy**: Use `wireshark_stats_protocol_hierarchy` to see what's in the traffic
 4. **Full-capture statistics**: Use `wireshark_aggregate` for totals, groups, distinct counts, top-k, and time buckets
@@ -187,7 +187,7 @@ WIRESHARK_MCP_GUIDE = """\
 
 - `wireshark_open_file` is recommended, not required: all tools stay available for the session
 - `wireshark_read_packets` is deprecated; prefer `wireshark_get_packet_list` and `wireshark_get_packet_details`
-- Always start broad, then narrow down with display filters
+- Start broad only for unfamiliar captures; otherwise use the smallest query that answers the question
 - Use `wireshark_aggregate` instead of estimating full-capture behavior from a page of extracted rows
 - Use `custom_columns` in `get_packet_list` to extract exactly the fields you need
 - Use `layers` parameter in `get_packet_details` to reduce output size

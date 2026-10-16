@@ -9,3 +9,5 @@ Use it for:
 - network troubleshooting
 
 Prefer the skill playbooks, evidence rubric, and report template over ad hoc analysis. Use `wireshark_aggregate` for capture-wide statistics and packet-level tools to verify important groups.
+
+For direct TShark CLI execution, use `skills/tshark-cli-analysis/SKILL.md`. Start from the actual question; unfamiliar inputs need triage, known frames/symptoms do not need repeated broad scans. Both skills are canonical under `skills/`; run `python scripts/sync_skills.py` to materialize client discovery mirrors.

@@ -37,6 +37,8 @@ class TestPythonEnvDetection:
 
     def test_get_python_executable_in_venv(self, tmp_path, monkeypatch):
         monkeypatch.setattr("wireshark_mcp.installer._detection.sys.platform", "linux")
+        monkeypatch.setattr("wireshark_mcp.installer._detection.sys.prefix", "base")
+        monkeypatch.setattr("wireshark_mcp.installer._detection.sys.base_prefix", "base")
         venv_dir = tmp_path / "venv"
         bin_dir = venv_dir / "bin"
         bin_dir.mkdir(parents=True)

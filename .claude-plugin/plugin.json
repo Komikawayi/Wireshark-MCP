@@ -1,0 +1,16 @@
+{
+  "name": "wireshark-mcp",
+  "version": "3.0.0",
+  "description": "Packet capture analysis through Wireshark MCP, with MCP and native TShark investigation skills.",
+  "author": { "name": "bx33661" },
+  "homepage": "https://github.com/bx33661/Wireshark-MCP",
+  "repository": "https://github.com/bx33661/Wireshark-MCP",
+  "license": "MIT",
+  "skills": "./skills/",
+  "mcpServers": {
+    "wireshark-mcp": {
+      "command": "uv",
+      "args": ["run", "--project", "${CLAUDE_PLUGIN_ROOT}", "--locked", "--no-dev", "wireshark-mcp", "serve", "--transport", "stdio"]
+    }
+  }
+}

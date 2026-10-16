@@ -47,4 +47,4 @@ python scripts/compare_agent_traffic.py \
 
 Efficiency statistics include only runs that pass fact, evidence, coverage, and conclusion-calibration checks. Execution errors remain a separate rate. This prevents a fast unsupported answer from appearing better than a slower correct one.
 
-Do not publish a winner until every variant covers all 12 scenarios. Review causal explanations and realistic alternatives manually; the deterministic scorer cannot establish whether an Agent's reasoning was supported merely from matching final fields.
+Do not publish a winner until every variant covers all manifest scenarios. Review causal explanations and realistic alternatives manually; the deterministic scorer cannot establish whether an Agent's reasoning was supported merely from matching final fields.

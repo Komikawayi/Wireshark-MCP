@@ -5,7 +5,7 @@ import os
 import sys
 from collections.abc import Sequence
 from ipaddress import ip_address
-from typing import Literal, cast
+from typing import Any, Literal, cast
 
 from . import __version__
 from .mcp_app import WiresharkMCP
@@ -240,6 +240,16 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     _add_client_selector_argument(uninstall_parser)
 
+    for client_parser in (install_parser, update_parser, uninstall_parser):
+        client_parser.add_argument(
+            "--scope", choices=["global", "project"], default="global", help="Client configuration scope"
+        )
+        client_parser.add_argument("--project-dir", help="Existing project directory; requires --scope project")
+        client_parser.add_argument(
+            "--dry-run", action="store_true", help="Preview changes without writing files or backups"
+        )
+        _add_text_or_json_format_argument(client_parser, help_text="Installation result format")
+
     doctor_parser = subparsers.add_parser(
         "doctor",
         help="Show Wireshark tool and MCP client diagnostics",
@@ -310,6 +320,14 @@ def main(argv: Sequence[str] | None = None) -> None:
         selected_clients = getattr(args, "clients", None) if args.command else args.legacy_clients
         config_format = getattr(args, "config_format", args.legacy_config_format)
         output_format = getattr(args, "output_format", args.legacy_output_format)
+        installer_options: dict[str, Any] = {}
+        if command in {"install", "update", "uninstall"}:
+            if getattr(args, "scope", "global") != "global":
+                installer_options["scope"] = args.scope
+            if getattr(args, "project_dir", None) is not None:
+                installer_options["project_dir"] = args.project_dir
+            if getattr(args, "dry_run", False):
+                installer_options["dry_run"] = True
         run_install(
             install=command == "install",
             update=command == "update",
@@ -320,6 +338,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             selected_clients=selected_clients,
             config_format=config_format,
             output_format=output_format,
+            **installer_options,
         )
         return
 

@@ -41,4 +41,3 @@ CODE_OF_CONDUCT.md
 # Auto-generated skill mirrors (canonical source lives in skills/)
 .github/skills/
 .claude/skills/
-.agents/skills/

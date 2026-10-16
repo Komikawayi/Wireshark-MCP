@@ -1,0 +1,102 @@
+# Exact option index
+
+
+Aliases are listed separately to make omissions testable; they share semantics. Some options are build/version dependent. Never infer operational support merely from an index entry.
+
+| Option | Execution guide |
+|---|---|
+| `--autostop` | [capture-and-input](capture-and-input.md) |
+| `--buffer-size` | [capture-and-input](capture-and-input.md) |
+| `--capture-comment` | [output-and-export](output-and-export.md) |
+| `--color` | [output-and-export](output-and-export.md) |
+| `--compress` | [output-and-export](output-and-export.md) |
+| `--disable-all-protocols` | [decode-and-decrypt](decode-and-decrypt.md) |
+| `--disable-heuristic` | [decode-and-decrypt](decode-and-decrypt.md) |
+| `--disable-protocol` | [decode-and-decrypt](decode-and-decrypt.md) |
+| `--display-filter` | [filters-and-fields](filters-and-fields.md) |
+| `--elastic-mapping-filter` | [output-and-export](output-and-export.md) |
+| `--enable-heuristic` | [decode-and-decrypt](decode-and-decrypt.md) |
+| `--enable-protocol` | [decode-and-decrypt](decode-and-decrypt.md) |
+| `--export-objects` | [output-and-export](output-and-export.md) |
+| `--export-tls-session-keys` | [output-and-export](output-and-export.md) |
+| `--global-profile` | [decode-and-decrypt](decode-and-decrypt.md) |
+| `--help` | [extensions-and-environment](extensions-and-environment.md) |
+| `--hexdump` | [output-and-export](output-and-export.md) |
+| `--interface` | [capture-and-input](capture-and-input.md) |
+| `--linktype` | [capture-and-input](capture-and-input.md) |
+| `--list-data-link-types` | [capture-and-input](capture-and-input.md) |
+| `--list-interfaces` | [capture-and-input](capture-and-input.md) |
+| `--list-time-stamp-types` | [capture-and-input](capture-and-input.md) |
+| `--log-debug` | [extensions-and-environment](extensions-and-environment.md) |
+| `--log-domains` | [extensions-and-environment](extensions-and-environment.md) |
+| `--log-fatal` | [extensions-and-environment](extensions-and-environment.md) |
+| `--log-fatal-domains` | [extensions-and-environment](extensions-and-environment.md) |
+| `--log-file` | [extensions-and-environment](extensions-and-environment.md) |
+| `--log-level` | [extensions-and-environment](extensions-and-environment.md) |
+| `--log-noisy` | [extensions-and-environment](extensions-and-environment.md) |
+| `--monitor-mode` | [capture-and-input](capture-and-input.md) |
+| `--no-duplicate-keys` | [output-and-export](output-and-export.md) |
+| `--no-promiscuous-mode` | [capture-and-input](capture-and-input.md) |
+| `--only-protocols` | [decode-and-decrypt](decode-and-decrypt.md) |
+| `--print` | [output-and-export](output-and-export.md) |
+| `--print-timers` | [extensions-and-environment](extensions-and-environment.md) |
+| `--read-file` | [capture-and-input](capture-and-input.md) |
+| `--read-filter` | [filters-and-fields](filters-and-fields.md) |
+| `--ring-buffer` | [capture-and-input](capture-and-input.md) |
+| `--snapshot-length` | [capture-and-input](capture-and-input.md) |
+| `--temp-dir` | [extensions-and-environment](extensions-and-environment.md) |
+| `--time-stamp-type` | [capture-and-input](capture-and-input.md) |
+| `--update-interval` | [output-and-export](output-and-export.md) |
+| `--version` | [extensions-and-environment](extensions-and-environment.md) |
+| `-2` | [filters-and-fields](filters-and-fields.md) |
+| `-A` | [capture-and-input](capture-and-input.md) |
+| `-B` | [capture-and-input](capture-and-input.md) |
+| `-C` | [decode-and-decrypt](decode-and-decrypt.md) |
+| `-D` | [capture-and-input](capture-and-input.md) |
+| `-E` | [filters-and-fields](filters-and-fields.md) |
+| `-F` | [output-and-export](output-and-export.md) |
+| `-G` | [extensions-and-environment](extensions-and-environment.md) |
+| `-H` | [output-and-export](output-and-export.md) |
+| `-I` | [capture-and-input](capture-and-input.md) |
+| `-J` | [output-and-export](output-and-export.md) |
+| `-K` | [decode-and-decrypt](decode-and-decrypt.md) |
+| `-L` | [capture-and-input](capture-and-input.md) |
+| `-M` | [filters-and-fields](filters-and-fields.md) |
+| `-N` | [decode-and-decrypt](decode-and-decrypt.md) |
+| `-O` | [output-and-export](output-and-export.md) |
+| `-P` | [output-and-export](output-and-export.md) |
+| `-Q` | [output-and-export](output-and-export.md) |
+| `-R` | [filters-and-fields](filters-and-fields.md) |
+| `-S` | [output-and-export](output-and-export.md) |
+| `-T` | [output-and-export](output-and-export.md) |
+| `-U` | [output-and-export](output-and-export.md) |
+| `-V` | [output-and-export](output-and-export.md) |
+| `-W` | [output-and-export](output-and-export.md) |
+| `-X` | [extensions-and-environment](extensions-and-environment.md) |
+| `-Y` | [filters-and-fields](filters-and-fields.md) |
+| `-a` | [capture-and-input](capture-and-input.md) |
+| `-b` | [capture-and-input](capture-and-input.md) |
+| `-c` | [capture-and-input](capture-and-input.md) |
+| `-d` | [decode-and-decrypt](decode-and-decrypt.md) |
+| `-e` | [filters-and-fields](filters-and-fields.md) |
+| `-f` | [capture-and-input](capture-and-input.md) |
+| `-g` | [output-and-export](output-and-export.md) |
+| `-h` | [extensions-and-environment](extensions-and-environment.md) |
+| `-i` | [capture-and-input](capture-and-input.md) |
+| `-j` | [output-and-export](output-and-export.md) |
+| `-l` | [output-and-export](output-and-export.md) |
+| `-n` | [decode-and-decrypt](decode-and-decrypt.md) |
+| `-o` | [decode-and-decrypt](decode-and-decrypt.md) |
+| `-p` | [capture-and-input](capture-and-input.md) |
+| `-q` | [output-and-export](output-and-export.md) |
+| `-r` | [capture-and-input](capture-and-input.md) |
+| `-s` | [capture-and-input](capture-and-input.md) |
+| `-t` | [output-and-export](output-and-export.md) |
+| `-u` | [output-and-export](output-and-export.md) |
+| `-v` | [extensions-and-environment](extensions-and-environment.md) |
+| `-w` | [output-and-export](output-and-export.md) |
+| `-x` | [output-and-export](output-and-export.md) |
+| `-y` | [capture-and-input](capture-and-input.md) |
+| `-z` | [statistics-and-streams](statistics-and-streams.md) |
+
+For the complete baseline list of report and statistics names, search [capability-catalog.json](capability-catalog.json). Use installed `-G help`, `-z help`, field/protocol registries and provider help to select exact arguments. A tap catalog entry does not guarantee a working follow selector.

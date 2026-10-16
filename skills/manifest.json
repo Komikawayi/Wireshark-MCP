@@ -3,9 +3,26 @@
   "generated_by": "scripts/sync_skills.py",
   "skills": [
     {
+      "name": "tshark-cli-analysis",
+      "canonical_path": "skills/tshark-cli-analysis",
+      "project_locations": [
+        ".agents/skills/tshark-cli-analysis",
+        ".github/skills/tshark-cli-analysis",
+        ".claude/skills/tshark-cli-analysis"
+      ],
+      "root_instruction_files": [
+        "CLAUDE.md"
+      ],
+      "copilot": {
+        "instructions_file": ".github/copilot-instructions.md"
+      },
+      "packaged_path": "wireshark_mcp/skills/tshark-cli-analysis"
+    },
+    {
       "name": "wireshark-traffic-analysis",
       "canonical_path": "skills/wireshark-traffic-analysis",
       "project_locations": [
+        ".agents/skills/wireshark-traffic-analysis",
         ".github/skills/wireshark-traffic-analysis",
         ".claude/skills/wireshark-traffic-analysis"
       ],
@@ -13,8 +30,7 @@
         "CLAUDE.md"
       ],
       "copilot": {
-        "instructions_file": ".github/copilot-instructions.md",
-        "prompt_file": ".github/prompts/wireshark-traffic-analysis.prompt.md"
+        "instructions_file": ".github/copilot-instructions.md"
       },
       "packaged_path": "wireshark_mcp/skills/wireshark-traffic-analysis"
     }

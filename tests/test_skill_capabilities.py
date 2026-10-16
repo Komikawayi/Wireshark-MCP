@@ -1,0 +1,236 @@
+"""Exercise skill contracts, executable examples and actual engine capability coverage."""
+
+from __future__ import annotations
+
+import ast
+import asyncio
+import importlib.util
+import io
+import json
+import re
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+from wireshark_mcp.server import _build_server
+
+ROOT = Path(__file__).resolve().parents[1]
+CLI = ROOT / "skills/tshark-cli-analysis"
+MCP = ROOT / "skills/wireshark-traffic-analysis"
+
+
+def _module(name: str, file: Path):
+    spec = importlib.util.spec_from_file_location(name, file)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+INVENTORY = _module("tshark_inventory", CLI / "scripts/tshark_inventory.py")
+RUNNER = _module("run_tshark", CLI / "scripts/run_tshark.py")
+
+
+def test_all_skill_reference_links_resolve() -> None:
+    for skill in (CLI, MCP):
+        for document in skill.rglob("*.md"):
+            for target in re.findall(r"\]\(([^)]+)\)", document.read_text()):
+                if "://" not in target:
+                    assert (document.parent / target.split("#")[0]).exists(), (document, target)
+
+
+def test_catalog_entries_route_to_existing_guides() -> None:
+    catalog = json.loads((CLI / "references/capability-catalog.json").read_text())
+    for kind in ("options", "reports", "statistics"):
+        assert catalog[kind]
+        for name, guide in catalog[kind].items():
+            assert (CLI / "references" / guide).is_file(), (name, guide)
+    # Manual-only controls are not discoverable from --help on this build.
+    assert {"-A", "--print-timers"} <= catalog["options"].keys()
+    assert len(catalog["reports"]) >= 18
+    assert len(catalog["statistics"]) >= 190
+
+
+def test_inventory_parser_and_future_gap_detection() -> None:
+    assert INVENTORY.parse_options("  -r <file>, --read-file <file>  input\nExample -w out\n") == ["--read-file", "-r"]
+    assert INVENTORY.parse_reports("  -G fields[,[<prefix>]]  fields\n") == ["fields"]
+    assert INVENTORY.parse_statistics("tshark: diagnostic\n     follow,tcp\n     io,stat\n") == [
+        "follow,tcp",
+        "io,stat",
+    ]
+    gaps = INVENTORY.coverage(
+        {"options": ["--future"], "reports": ["future"], "statistics": ["future,tree"]},
+        {"options": {}, "reports": {}, "statistics": {}},
+    )
+    assert all(gaps.values())
+
+
+def test_mcp_example_calls_match_actual_schemas() -> None:
+    app = _build_server(host="127.0.0.1", port=8080, log_level="ERROR")
+    schemas = {tool.name: tool.input_schema for tool in asyncio.run(app.list_tools())}
+    lines = (MCP / "references/query-patterns.md").read_text().splitlines()
+    count = 0
+    for line in lines:
+        if not line.startswith("wireshark_"):
+            continue
+        call = ast.parse(line, mode="eval").body
+        assert isinstance(call, ast.Call) and isinstance(call.func, ast.Name)
+        schema = schemas[call.func.id]
+        kwargs = {kw.arg: ast.literal_eval(kw.value) for kw in call.keywords}
+        assert set(schema.get("required", [])) <= kwargs.keys(), line
+        assert kwargs.keys() <= schema["properties"].keys(), line
+        for key, value in kwargs.items():
+            prop = schema["properties"][key]
+            if "enum" in prop:
+                assert value in prop["enum"]
+            if prop.get("type") == "string":
+                assert isinstance(value, str)
+        count += 1
+    assert count >= 6
+
+
+def test_bounded_runner_reaps_and_caps_outputs() -> None:
+    out, err = io.BytesIO(), io.BytesIO()
+    r = RUNNER.run_bounded(
+        [sys.executable, "-c", "import sys;sys.stdout.write('x'*200000)"], out, err, timeout=5, budget=1024
+    )
+    assert r["status"] == "output_limit"
+    assert len(out.getvalue()) + len(err.getvalue()) <= 1024
+    assert isinstance(r["returncode"], int)
+    r = RUNNER.run_bounded(
+        [sys.executable, "-c", "import time;time.sleep(5)"], io.BytesIO(), io.BytesIO(), timeout=0.05, budget=1024
+    )
+    assert r["status"] == "timeout"
+    assert isinstance(r["returncode"], int)
+
+
+@pytest.mark.parametrize(
+    "args", [["-wout.pcap"], ["--export-objects=http,out"], ["-i", "en0"], ["-Xlua_script:packet.lua"]]
+)
+def test_runner_separates_unbudgeted_side_effects(args: list[str]) -> None:
+    with pytest.raises(ValueError):
+        RUNNER.validate_args(args)
+
+
+@pytest.mark.skipif(shutil.which("tshark") is None, reason="requires installed tshark")
+def test_installed_tshark_capabilities_have_documented_routes() -> None:
+    inventory = INVENTORY.collect(shutil.which("tshark"))
+    catalog = json.loads((CLI / "references/capability-catalog.json").read_text())
+    # A different release may add names. Make them explicit in a failing gate.
+    gaps = INVENTORY.coverage(inventory, catalog)
+    assert not any(gaps.values()), gaps
+
+
+@pytest.mark.skipif(shutil.which("tshark") is None, reason="requires installed tshark")
+def test_real_cli_count_json_and_bounded_record(tmp_path: Path) -> None:
+    spec = _module("fixtures", ROOT / "tests/fixtures/generate_pcaps.py")
+    capture = spec.build_all_fixtures(tmp_path)["dns_tunnel"]
+    command = [shutil.which("tshark"), "-n", "-r", str(capture)]
+    result = subprocess.run(
+        [*command, "-Y", "dns.flags.response == 0", "-T", "fields", "-e", "frame.number"],
+        capture_output=True,
+        check=True,
+        timeout=15,
+    )
+    assert len(result.stdout.splitlines()) == 27
+    data = subprocess.run(
+        [*command, "-c", "1", "-T", "json", "--no-duplicate-keys"], capture_output=True, check=True, timeout=15
+    )
+    assert len(json.loads(data.stdout)) == 1
+    destination = tmp_path / "run"
+    assert (
+        RUNNER.main(
+            [
+                "--input",
+                str(capture),
+                "--output-dir",
+                str(destination),
+                "--",
+                "-Y",
+                "dns.flags.response == 0",
+                "-T",
+                "fields",
+                "-e",
+                "frame.number",
+            ]
+        )
+        == 0
+    )
+    record = json.loads((destination / "execution.json").read_text())
+    assert record["coverage"]["status"] == "complete"
+    assert not record["input_changed"]
+    assert len((destination / "stdout.bin").read_bytes().splitlines()) == 27
+    assert len(record["input"]["sha256"]) == 64
+
+
+@pytest.mark.parametrize("args", [["--help"], ["-G", "fields"], ["--hexdump", "help"]])
+def test_runner_does_not_label_discovery_as_capture_scan(args: list[str]) -> None:
+    with pytest.raises(ValueError):
+        RUNNER.validate_args(args)
+
+
+def test_wheel_validator_rejects_a_missing_skill_resource(tmp_path: Path, monkeypatch) -> None:
+    from zipfile import ZipFile
+
+    checker = _module("check_skill_package", ROOT / "scripts/check_skill_package.py")
+    source = tmp_path / "skills/example"
+    source.mkdir(parents=True)
+    (source / "SKILL.md").write_text("a skill")
+    (source / "helper.py").write_text("print('helper')")
+    manifest = tmp_path / "skills/manifest.json"
+    manifest.write_text(json.dumps({"skills": [{"name": "example"}]}))
+    monkeypatch.setattr(checker, "ROOT", tmp_path)
+    wheel = tmp_path / "test.whl"
+    with ZipFile(wheel, "w") as archive:
+        archive.writestr("wireshark_mcp/skills/manifest.json", manifest.read_bytes())
+        archive.writestr("wireshark_mcp/skills/example/SKILL.md", "a skill")
+    with pytest.raises(ValueError, match="helper.py"):
+        checker.check(wheel)
+
+
+def test_every_catalog_option_has_execution_guidance() -> None:
+    catalog = json.loads((CLI / "references/capability-catalog.json").read_text())
+    for option, guide in catalog["options"].items():
+        assert option in (CLI / "references" / guide).read_text(), (option, guide)
+
+
+@pytest.mark.skipif(shutil.which("tshark") is None, reason="requires installed tshark")
+def test_real_documented_statistics_filters_formats_and_derived_file(tmp_path: Path) -> None:
+    fixture = _module("fixtures_more", ROOT / "tests/fixtures/generate_pcaps.py").build_all_fixtures(tmp_path)
+    source = fixture["dns_tunnel"]
+    command = [shutil.which("tshark"), "-n", "-r", str(source)]
+
+    def execute(*args: str):
+        return subprocess.run([*command, *args], capture_output=True, check=True, timeout=15)
+
+    for mode in ("fields", "json", "jsonraw", "ek", "pdml", "psml", "ps", "tabs", "text"):
+        args = ["-c", "1", "-T", mode]
+        if mode == "fields":
+            args += ["-e", "frame.number"]
+        assert execute(*args).stdout
+    for statistic in ("io,phs", "endpoints,ip", "conv,udp", "expert", "follow,udp,ascii,0"):
+        assert execute("-q", "-z", statistic).stdout
+    # -Y only changes ordinary packet output, not an independently filtered tap.
+    unscoped = execute("-Y", "frame.number == 1", "-q", "-z", "io,stat,0").stdout.decode()
+    scoped = execute("-q", "-z", "io,stat,0,frame.number == 1").stdout.decode()
+    assert re.search(r"\|\s+27\s+\|", unscoped)
+    assert re.search(r"\|\s+1\s+\|", scoped)
+    derived = tmp_path / "one-frame.pcapng"
+    original = source.read_bytes()
+    execute("-Y", "frame.number == 1", "-w", str(derived), "-F", "pcapng")
+    reopened = subprocess.run(
+        [shutil.which("tshark"), "-n", "-r", str(derived), "-T", "fields", "-e", "frame.number"],
+        capture_output=True,
+        check=True,
+        timeout=15,
+    )
+    assert reopened.stdout.splitlines() == [b"1"]
+    assert source.read_bytes() == original
+
+
+def test_unfamiliar_plugin_names_are_not_silently_dropped() -> None:
+    assert INVENTORY.parse_statistics("     VendorX,latency.v2\n") == ["VendorX,latency.v2"]
+    assert INVENTORY.parse_reports("  -G VendorReport2  extra data\n") == ["VendorReport2"]

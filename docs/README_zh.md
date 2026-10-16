@@ -9,6 +9,8 @@
 | 需求 | 文档 |
 |------|------|
 | 自动安装或排查安装问题 | 先按主 [README](../README_zh.md) 运行 `wireshark-mcp install` 和 `wireshark-mcp doctor` |
+| 预览、项目级安装、更新、卸载与备份 | [安装生命周期](installation_zh.md) |
+| 作为 Codex / Claude Code 插件安装 | [插件分发](plugin-installation_zh.md) |
 | 手动配置 MCP 客户端 | [手动配置](manual-configuration_zh.md) |
 | 本机、SSH、WSL 或容器部署 | [部署场景](deployment-scenarios_zh.md) |
 | 将 2.x 部署安全迁移到 3.0 | [3.0 安全迁移](security-hardening-v3_zh.md) |
@@ -23,6 +25,7 @@
 | 搭建开发环境或提交修改 | [贡献指南](../CONTRIBUTING.md) |
 | 验收 macOS、Linux、Windows | [平台验收](platform-validation_zh.md) |
 | 准备发布 | [发布清单](release-checklist.md) |
+| 安装、发现与使用抓包分析 Skill | [Skills 指南](skills_zh.md) |
 | 评估 Agent 流量分析行为 | [Agent 评测套件](agent-evaluation_zh.md) |
 | 对比 MCP 与原生 tshark | [分析路径对照基准](analysis-path-benchmark_zh.md) |
 | 查看已发布内容与后续计划 | [更新日志](../CHANGELOG.md) · [功能路线图](../ROADMAP_zh.md) |

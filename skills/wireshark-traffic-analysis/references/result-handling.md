@@ -13,6 +13,8 @@ Use this reference when deciding whether a result supports a conclusion or how t
 
 Check both envelope and nested result metadata. `truncated` can describe scan limits, output limits, or aggregation limits; determine which before using the numbers. Returned records must agree with returned counts. Preserve the global denominator and confirm that continuation does not skip records. A `has_more` flag without a usable continuation is not a pagination implementation.
 
+The current `wireshark_extract_fields` TSV path paginates output lines, including the header. `limit=1, offset=0` can return only a header with truncation, not an empty matching scope. Budget for the header plus evidence rows; on subsequent line-offset pages retain the original header for parsing. If a narrowly filtered query returns only a header with truncation, increase its line budget without broadening the filter. Other tools use different row/packet/line units: inspect their schemas and actual output rather than assuming all limits mean packets.
+
 On timeout or resource limits, change the query: reduce selected fields, narrow an explicitly reported time/host scope, or use a supported statistic. Do not repeat an identical failing query or silently increase limits. If splitting time windows, use non-overlapping boundaries. Counts can be summed only for disjoint packet sets; distinct counts cannot generally be summed across partitions.
 
 For unknown fields or missing tools, inspect the available schema/capabilities once and choose a supported equivalent. For permission or missing input failures, identify what is needed; do not treat another backend as a way around the boundary. Stop when progress requires unavailable data or permissions.

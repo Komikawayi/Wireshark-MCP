@@ -1,6 +1,6 @@
 ---
 name: wireshark-traffic-analysis
-description: Investigate pcap/pcapng captures with Wireshark MCP to answer traffic, security, and network troubleshooting questions. Select bounded queries, verify packet evidence, and report what the capture can and cannot establish. Use the CLI skill when the user chooses direct tshark execution.
+description: Investigate pcap/pcapng captures through Wireshark MCP for traffic questions, network troubleshooting, and evidence-backed security analysis. Use when MCP tools are the selected backend; use tshark-cli-analysis for direct terminal execution.
 ---
 
 # Agent Traffic Investigation — Wireshark MCP
@@ -24,15 +24,11 @@ For an unfamiliar capture, `wireshark_open_file` obtains metadata and protocol r
 | A specific host, frame, stream, or failure | Filtered extraction or packet/stream inspection | Broaden only if the local evidence cannot explain it |
 | Suspected compromise or root cause | A query distinguishing plausible explanations | Confirm with packet evidence and inspect the strongest counter-explanation |
 
-Read [playbooks.md](references/playbooks.md) only for the relevant investigation branch. Check uncertain field names and filter syntax through available protocol-field/display-filter resources or the installed engine; reference examples are not an exhaustive field catalog.
+Read [playbooks.md](references/playbooks.md) for the relevant investigation branch and [diagnostic-decisions.md](references/diagnostic-decisions.md) for DNS, connection, TLS, latency, and periodic-traffic decisions. Use [query-patterns.md](references/query-patterns.md) for minimal schema-checked examples, not as a mandatory sequence. Check uncertain fields through available protocol-field/display-filter resources; their examples are not a complete registry.
 
-For BLE, select only the relevant `wireshark_analyze_protocol` value: `ble` for
-raw overview, `ble_devices` for advertisers, `ble_scan_activity` for scanners,
-`ble_gatt_timeline` for ATT operations, `ble_connections` for connection sessions,
-or `ble_pairing` for SMP negotiation. Start with `limit=20`, then expand only to
-resolve missing evidence; do not execute every recommendation. In multi-link
-GATT results, use each event's `connection` and `server` with `handle_maps`;
-attribute handles are not global across peers or reconnections.
+Before a conclusion depends on missing responses, retransmissions, time ordering, or encrypted content, use [capture-quality.md](references/capture-quality.md) to check whether this capture can answer it. Do not make all quality checks a prerequisite to a simple lookup.
+
+For BLE, TLS/QUIC/HTTP2, or industrial traffic, load only the relevant section of [protocol-branches.md](references/protocol-branches.md). Discover the advertised protocol values and tool profile before selecting a specialized operation.
 
 ## Investigation loop
 
@@ -43,6 +39,10 @@ attribute handles are not global across peers or reconnections.
 5. Update or reject the hypothesis. Stop when the requested fact is established, the leading explanation has sufficient evidence and checked alternatives, or the missing evidence cannot be obtained from this capture.
 
 Keep compact investigation state when the work spans many calls: question; capture identity and scope; queries and results already obtained; supported/rejected explanations; unresolved gap; next discriminating query. Reuse results only while the capture, filter, and decoding settings are unchanged.
+
+For multiple files or resumed work, use [investigation-state.md](references/investigation-state.md). Frame and stream numbers are local to a file; timestamps, interfaces, NAT roles, and decode settings must be reconciled before joining observations. Reopening a file does not validate cached results after the file changes.
+
+Keep each query proportional to the decision: aggregate before detailed extraction; select only needed fields/layers; start with a bounded evidence sample. Expand when the next page or broader scope could change the conclusion. A preview is not a global count. Record skipped checks as unresolved, not negative. Switching backend needs an available, task-appropriate CLI path and must preserve scope and decoding semantics.
 
 ## Evidence and completion
 

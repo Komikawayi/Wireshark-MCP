@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import re
 import sys
+from pathlib import Path
 
 from ._detection import _get_linux_config_home, _join_path
 
@@ -226,9 +227,27 @@ def _normalize_client_key(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", name.casefold())
 
 
-def get_client_configs(selected_clients: list[str] | None = None) -> dict[str, tuple[str, str]]:
+def get_client_configs(
+    selected_clients: list[str] | None = None, *, scope: str = "global", project_dir: str | None = None
+) -> dict[str, tuple[str, str]]:
     """Return all known clients or a validated subset selected by the CLI."""
-    configs = _get_client_configs()
+    if scope == "project":
+        root = Path(project_dir or os.getcwd()).resolve(strict=True)
+        if not root.is_dir():
+            raise ValueError(f"Project directory is not a directory: {root}")
+        configs = {
+            "Claude Code": (str(root), ".mcp.json"),
+            "Cursor": (str(root / ".cursor"), "mcp.json"),
+            "Codex": (str(root / ".codex"), "config.toml"),
+            "VS Code": (str(root / ".vscode"), "mcp.json"),
+            "VS Code Insiders": (str(root / ".vscode"), "mcp.json"),
+        }
+    elif scope == "global":
+        if project_dir is not None:
+            raise ValueError("--project-dir requires --scope project")
+        configs = _get_client_configs()
+    else:
+        raise ValueError(f"Unknown installation scope: {scope}")
     if not selected_clients:
         return configs
 
@@ -238,8 +257,8 @@ def get_client_configs(selected_clients: list[str] | None = None) -> dict[str, t
 
     for raw_name in selected_clients:
         normalized = _normalize_client_key(raw_name)
-        if not normalized or normalized == "all":
-            return configs
+        if normalized == "all":
+            continue
 
         client_name = normalized_map.get(normalized)
         if client_name is None:
@@ -252,4 +271,6 @@ def get_client_configs(selected_clients: list[str] | None = None) -> dict[str, t
         supported = ", ".join(configs) if configs else "none"
         raise ValueError(f"Unknown client(s): {', '.join(unknown)}. Supported clients: {supported}.")
 
+    if any(_normalize_client_key(name) == "all" for name in selected_clients):
+        return configs
     return resolved

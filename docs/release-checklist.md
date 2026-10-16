@@ -59,6 +59,29 @@ Before release, confirm:
 - the numbered changelog explains user-visible changes from `changelog/unreleased.md`
 - `ROADMAP.md` and `ROADMAP_zh.md` reflect any completed or rescheduled work
 
+## Skill Gates
+
+Validate source, discoverability, packaged resources and behavior separately:
+
+```sh
+python scripts/sync_skills.py
+python scripts/sync_skills.py --check --require-installed
+python skills/tshark-cli-analysis/scripts/tshark_inventory.py --output new-inventory.json --check
+python scripts/check_skill_package.py dist/wireshark_mcp-<version>-py3-none-any.whl
+python scripts/check_skill_installation.py --python /absolute/path/to/clean/venv/python --require-engine --output installed-skills.json
+```
+
+Review every newly discovered option/report/tap against the installed/official
+manual before updating the capability catalog. The wheel must contain both skill
+entrypoints, every referenced guide, UI metadata and executable helper source;
+bytecode caches are not distributed. Run actual offline format/statistic/export
+smokes and budget recovery tests. Live/remote capture, hardware-specific and
+key-dependent features need appropriate separate environments, not fabricated
+sign-off from an offline fixture. Independent Agent traces are required before
+publishing behavior/cost improvements. Require a complete repeated matrix with
+`scripts/check_agent_matrix.py` before interpreting a full comparison; prepared
+blind tasks are not executed results. See [Agent evaluation](agent-evaluation.md).
+
 ## Cross-Platform Sign-Off
 
 Use [platform-validation.md](platform-validation.md) to confirm at least one manual validation pass on:
@@ -83,3 +106,17 @@ After publication, confirm:
 - `wireshark-mcp --version` matches the tagged release
 - `server.json` and `.well-known/mcp/server.json` match the release version
 - a clean installation can call `wireshark_open_file`, `wireshark_aggregate`, and one packet-level verification tool
+
+## Client plugin distribution
+
+Keep both plugin manifest versions aligned with the Python package. Validate
+`scripts/check_plugin_package.py`, build a clean source ZIP, and cold-start both
+launchers with `scripts/smoke_plugin_runtime.py`. Test native client
+marketplace/install/list/remove in isolated configuration directories. Check
+that fresh uv environments contain no dev dependencies, stdio is clean, and
+skills/resources resolve without a developer checkout or venv.
+
+Commit/publish the repo manifests before advertising the GitHub marketplace
+commands as available. Repository marketplaces, release ZIPs and universal public
+directory approval are distinct deliverables. Never infer GUI-session success
+from manifest parsing alone.
