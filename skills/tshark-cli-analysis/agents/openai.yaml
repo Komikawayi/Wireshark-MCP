@@ -1,0 +1,4 @@
+interface:
+  display_name: "TShark CLI Analysis"
+  short_description: "Analyze captures with the full TShark CLI"
+  default_prompt: "Use $tshark-cli-analysis to answer the packet-analysis question with bounded, reproducible TShark queries and verified evidence."

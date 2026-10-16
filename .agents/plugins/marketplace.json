@@ -1,0 +1,12 @@
+{
+  "name": "wireshark-mcp",
+  "interface": { "displayName": "Wireshark MCP" },
+  "plugins": [
+    {
+      "name": "wireshark-mcp",
+      "source": { "source": "local", "path": "./" },
+      "policy": { "installation": "AVAILABLE", "authentication": "ON_USE" },
+      "category": "Developer Tools"
+    }
+  ]
+}

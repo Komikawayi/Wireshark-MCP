@@ -53,6 +53,26 @@ Claude: [调用 wireshark_extract_dns_queries → wireshark_detect_dns_tunnel]
 
 ## 安装
 
+### Claude Code / Codex 插件路线
+
+前置条件：安装 `uv` 和 Wireshark CLI（`tshark`）。插件包含本项目与两个 Skills，客户端通过 `uv` 准备 Python 依赖并启动 stdio 服务；不自动安装 Wireshark 或抓包驱动。
+
+在包含本轮插件清单的仓库根目录执行，选择你的客户端：
+
+```sh
+# Codex
+codex plugin marketplace add .
+codex plugin add wireshark-mcp@wireshark-mcp
+
+# Claude Code
+claude plugin marketplace add .
+claude plugin install wireshark-mcp@wireshark-mcp
+```
+
+本地安装、旧版重装、环境变量及发布后的 GitHub 入口见 [插件分发指南](docs/plugin-installation_zh.md)。插件路线与下面的传统客户端配置路线二选一，避免重复注册。
+
+### 传统 Python 包路线
+
 **前置条件：** Python 3.10+ 和 [Wireshark](https://www.wireshark.org/)（`tshark` 需在 PATH 中）。
 
 Wireshark MCP 3.0 基于稳定版 MCP Python SDK 2.x（`mcp>=2.1.1,<3`）。
@@ -62,7 +82,16 @@ pip install wireshark-mcp
 wireshark-mcp install   # 从检测到的 MCP 客户端中选择并配置
 ```
 
-重启你的 AI 客户端即可。
+脚本/无交互终端中须显式指定客户端；可以先预览，再安装到当前项目：
+
+```sh
+wireshark-mcp install --client codex --scope project --dry-run
+wireshark-mcp install --client codex --scope project
+```
+
+默认 `--scope global`；`--client` 可重复，明确批量操作可用 `--client all`。重启客户端以加载配置。安装、更新、卸载、备份与退出码见 [安装指南](docs/installation_zh.md)。
+
+项目同时提供 MCP 与完整 TShark CLI 分析 Skill，见 [Skill 发现与使用指南](docs/skills_zh.md)。
 
 如有问题运行 `wireshark-mcp doctor` 诊断。手动配置或平台特定说明见 [docs/manual-configuration_zh.md](docs/manual-configuration_zh.md)。
 

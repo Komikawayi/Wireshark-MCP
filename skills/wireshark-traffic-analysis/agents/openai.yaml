@@ -1,5 +1,5 @@
 interface:
-  display_name: "Agent Traffic Analysis"
+  display_name: "Wireshark MCP Analysis"
   short_description: "Investigate captures with reproducible evidence"
   default_prompt: "Use $wireshark-traffic-analysis to answer the question about this capture, verify the relevant evidence, and explain any limits."
 

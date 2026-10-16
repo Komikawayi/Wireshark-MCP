@@ -34,6 +34,11 @@ CURRENT_DOCS = (
     ROOT / "docs" / "release-checklist.md",
     ROOT / "skills" / "wireshark-traffic-analysis" / "SKILL.md",
     ROOT / "skills" / "wireshark-traffic-analysis" / "references" / "playbooks.md",
+    ROOT / "docs" / "skills.md",
+    ROOT / "docs" / "skills_zh.md",
+    ROOT / "docs" / "agent-evaluation.md",
+    ROOT / "docs" / "agent-evaluation_zh.md",
+    *sorted((ROOT / "skills").rglob("*.md")),
 )
 
 
@@ -75,7 +80,6 @@ def test_current_documentation_does_not_restore_removed_interfaces() -> None:
     forbidden = {
         "wireshark_decode_payload": "removed MCP tool",
         "wireshark_security_audit": "removed MCP tool; security_audit is a prompt",
-        "--dry-run": "unsupported installer option",
         "--no-backup": "unsupported installer option",
         "wireshark-mcp rollback": "unsupported command",
         "spec/changes": "removed change-record directory",

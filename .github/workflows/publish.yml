@@ -61,13 +61,19 @@ jobs:
     - name: Build package
       run: python -m build
 
+    - name: Validate plugin wiring
+      run: python scripts/check_plugin_package.py
+
     - name: Validate built wheel contents
       run: |
-        python -c "import glob, os, zipfile; wheel = max(glob.glob('dist/*.whl'), key=os.path.getmtime); names = set(zipfile.ZipFile(wheel).namelist()); assert any(name.endswith('wireshark_mcp/skills/wireshark-traffic-analysis/SKILL.md') for name in names), 'Skill package missing from wheel'"
+        python -c "import glob, subprocess, sys; subprocess.check_call([sys.executable, 'scripts/check_skill_package.py', glob.glob('dist/*.whl')[0]])"
 
     - name: Install built wheel
       run: |
         python -c "import glob, os, subprocess, sys; wheel = max(glob.glob('dist/*.whl'), key=os.path.getmtime); subprocess.check_call([sys.executable, '-m', 'pip', 'install', '--force-reinstall', wheel])"
+
+    - name: Validate installed skill discovery and dependencies
+      run: python scripts/check_skill_installation.py --output installed-skill-smoke.json
 
     - name: Run release smoke tests
       run: |

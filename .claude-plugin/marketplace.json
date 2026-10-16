@@ -1,0 +1,14 @@
+{
+  "name": "wireshark-mcp",
+  "owner": {
+    "name": "bx33661"
+  },
+  "plugins": [
+    {
+      "name": "wireshark-mcp",
+      "source": "./",
+      "description": "Wireshark MCP server and packet-analysis skills"
+    }
+  ],
+  "description": "Wireshark packet-analysis MCP server and investigation skills"
+}

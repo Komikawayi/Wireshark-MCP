@@ -27,12 +27,8 @@ PROSE_SOURCES = [
     "src/wireshark_mcp/prompts.py",
     "src/wireshark_mcp/resources.py",
     "src/wireshark_mcp/tools/agents.py",
-    "skills/wireshark-traffic-analysis/SKILL.md",
-    "skills/wireshark-traffic-analysis/references/playbooks.md",
-    "skills/wireshark-traffic-analysis/references/evidence-rubric.md",
-    "skills/wireshark-traffic-analysis/references/report-template.md",
-    "skills/wireshark-traffic-analysis/references/official-wireshark-notes.md",
     ".github/prompts/wireshark-traffic-analysis.prompt.md",
+    *[str(path.relative_to(REPO_ROOT)) for path in sorted((REPO_ROOT / "skills").rglob("*.md"))],
 ]
 
 TOOL_NAME_RE = re.compile(r"\bwireshark_[a-z0-9_]+")

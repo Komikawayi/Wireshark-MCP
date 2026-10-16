@@ -4,7 +4,10 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import math
+import re
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -32,6 +35,8 @@ def _load_runs(path: Path) -> list[dict[str, Any]]:
 
 
 def _same_value(actual: Any, expected: Any) -> bool:
+    if isinstance(actual, bool) != isinstance(expected, bool):
+        return False
     if isinstance(expected, list):
         return isinstance(actual, list) and sorted(actual, key=str) == sorted(expected, key=str)
     return actual == expected
@@ -42,8 +47,87 @@ def _claim_text(run: dict[str, Any]) -> str:
     return json.dumps(reportable, ensure_ascii=False, default=str).casefold()
 
 
-def score_run(scenario: dict[str, Any], run: dict[str, Any]) -> dict[str, Any]:
+def load_traces(directory: Path, runs: list[dict[str, Any]]) -> dict[str, Any]:
+    """Load harness-owned sidecars, checking result artifacts before scoring reports.
+
+    This checks integrity/consistency, not collector authenticity or causal reasoning.
+    Keep this directory separate from the Agent's writable answer directory.
+    """
+    traces: dict[str, Any] = {}
+    root = directory.resolve()
+    for run in runs:
+        trace_id = run.get("trace_id")
+        if not isinstance(trace_id, str) or not trace_id or trace_id in traces:
+            continue
+        try:
+            path = (root / trace_id).resolve()
+            path.relative_to(root)
+            raw = path.read_bytes()
+            expected = run.get("trace_sha256")
+            if not isinstance(expected, str) or hashlib.sha256(raw).hexdigest() != expected:
+                raise ValueError("trace SHA-256 mismatch or missing digest")
+            trace = json.loads(raw)
+            if not isinstance(trace, dict) or not isinstance(trace.get("calls"), list):
+                raise ValueError("invalid trace object")
+            input_id = trace.get("input_id")
+            if isinstance(input_id, str) and not input_id.startswith("synthetic://"):
+                capture = Path(input_id)
+                if not capture.is_absolute():
+                    capture = Path(__file__).resolve().parents[1] / capture
+                identity = hashlib.sha256()
+                with capture.open("rb") as source:
+                    for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                        identity.update(chunk)
+                if identity.hexdigest() != trace.get("input_sha256"):
+                    raise ValueError("input capture SHA-256 mismatch")
+            for call in trace["calls"]:
+                if not isinstance(call, dict):
+                    raise ValueError("invalid trace call")
+                artifact = (root / call["result_file"]).resolve()
+                artifact.relative_to(root)
+                if hashlib.sha256(artifact.read_bytes()).hexdigest() != call["result_sha256"]:
+                    raise ValueError("result SHA-256 mismatch")
+            trace["_verified_file_sha256"] = hashlib.sha256(raw).hexdigest()
+            traces[trace_id] = trace
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            traces[trace_id] = {"load_error": str(exc)}
+    return traces
+
+
+def _check_trace(scenario: dict[str, Any], run: dict[str, Any], trace: Any, failures: list[str]) -> dict[str, Any]:
+    if not isinstance(trace, dict) or trace.get("load_error"):
+        failures.append("verified execution trace missing or invalid")
+        return {}
+    if "_verified_file_sha256" in trace and trace["_verified_file_sha256"] != run.get("trace_sha256"):
+        failures.append("run trace SHA-256 differs from loaded sidecar")
+    if trace.get("input_id") != scenario.get("capture"):
+        failures.append("trace input does not match scenario capture")
+    digest = trace.get("input_sha256")
+    if not str(scenario.get("capture", "")).startswith("synthetic://") and (
+        not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest)
+    ):
+        failures.append("trace capture SHA-256 missing or invalid")
+    calls = trace.get("calls")
+    if not isinstance(calls, list) or not calls:
+        failures.append("trace has no calls")
+        return {}
+    indexed: dict[str, Any] = {}
+    for call in calls:
+        if not isinstance(call, dict) or not isinstance(call.get("id"), str) or not call["id"]:
+            failures.append("invalid trace call ID")
+            continue
+        if call["id"] in indexed:
+            failures.append("duplicate trace call ID")
+        indexed[call["id"]] = call
+    return indexed
+
+
+def score_run(scenario: dict[str, Any], run: dict[str, Any], trace: dict[str, Any] | None = None) -> dict[str, Any]:
     failures: list[str] = []
+    execution = run.get("execution")
+    if not isinstance(execution, dict) or execution.get("status") != "completed":
+        failures.append("investigation execution must be completed")
+    calls = _check_trace(scenario, run, trace, failures)
     conclusion = run.get("conclusion")
     if conclusion not in VALID_CONCLUSIONS:
         failures.append(f"invalid conclusion: {conclusion!r}")
@@ -54,11 +138,31 @@ def score_run(scenario: dict[str, Any], run: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(facts, dict):
         failures.append("facts must be an object")
         facts = {}
+    evidence_ids = (
+        {
+            anchor["call_id"]
+            for anchor in run.get("evidence", [])
+            if isinstance(anchor, dict) and isinstance(anchor.get("call_id"), str)
+        }
+        if isinstance(run.get("evidence"), list)
+        else set()
+    )
     for key, expected in scenario.get("expected_facts", {}).items():
         if key not in facts:
             failures.append(f"missing fact: {key}")
         elif not _same_value(facts[key], expected):
             failures.append(f"fact {key!r} expected {expected!r}, got {facts[key]!r}")
+        supporting = [
+            call.get("observations", {}).get("facts", {})
+            for call_id, call in calls.items()
+            if call_id in evidence_ids
+            if isinstance(call.get("observations"), dict)
+        ]
+        if not any(
+            isinstance(values, dict) and key in values and _same_value(values[key], facts.get(key))
+            for values in supporting
+        ):
+            failures.append(f"fact {key!r} has no trace observation")
 
     coverage = run.get("coverage")
     coverage_status = coverage.get("status") if isinstance(coverage, dict) else None
@@ -66,6 +170,8 @@ def score_run(scenario: dict[str, Any], run: dict[str, Any]) -> dict[str, Any]:
         failures.append(f"coverage {coverage_status!r} not in {scenario.get('allowed_coverage', [])!r}")
     if coverage_status != "complete" and conclusion == "no_match" and run.get("claim_scope") == "capture":
         failures.append("partial or unknown coverage cannot support a capture-wide no-match claim")
+    if conclusion == "no_match" and run.get("claim_scope") not in {"capture", "filter", "window", "observed"}:
+        failures.append("no-match conclusion requires an explicit claim scope")
 
     evidence = run.get("evidence")
     if not isinstance(evidence, list):
@@ -83,6 +189,30 @@ def score_run(scenario: dict[str, Any], run: dict[str, Any]) -> dict[str, Any]:
             failures.append(f"evidence[{index}] type {anchor.get('type')!r} is not accepted")
         if rule.get("query_required") and not str(anchor.get("query", "")).strip():
             failures.append(f"evidence[{index}] is missing the executed query")
+        call_id = anchor.get("call_id")
+        call = calls.get(call_id) if isinstance(call_id, str) else None
+        if call is None:
+            failures.append(f"evidence[{index}] references no executed call")
+            continue
+        if anchor.get("query") != call.get("query"):
+            failures.append(f"evidence[{index}] query differs from execution trace")
+        is_error = anchor.get("type") == "error"
+        if call.get("status") not in ({"error", "timeout", "output_limit"} if is_error else {"completed"}):
+            failures.append(f"evidence[{index}] call status cannot support this evidence")
+        if not is_error and coverage_status == "complete" and call.get("coverage") != "complete":
+            failures.append(f"evidence[{index}] complete claim contradicts call coverage")
+        if anchor.get("type") in {"frame", "stream"}:
+            value = anchor.get("value")
+            field = "frames" if anchor["type"] == "frame" else "streams"
+            observed = call.get("observations", {})
+            if (
+                not isinstance(value, int)
+                or isinstance(value, bool)
+                or value < (1 if field == "frames" else 0)
+                or not isinstance(observed, dict)
+                or value not in observed.get(field, [])
+            ):
+                failures.append(f"evidence[{index}] anchor was not observed in the executed result")
 
     text = _claim_text(run)
     for forbidden in scenario.get("forbidden_claims", []):
@@ -90,6 +220,11 @@ def score_run(scenario: dict[str, Any], run: dict[str, Any]) -> dict[str, Any]:
             failures.append(f"forbidden claim present: {forbidden!r}")
 
     metrics = run.get("metrics", {}) if isinstance(run.get("metrics"), dict) else {}
+    for key, value in metrics.items():
+        if value is None:
+            continue
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
+            failures.append(f"invalid metric: {key}")
     return {
         "scenario_id": scenario["id"],
         "variant": run.get("variant", "unspecified"),
@@ -108,7 +243,9 @@ def _mean(values: Iterable[float]) -> float | None:
     return round(sum(collected) / len(collected), 2) if collected else None
 
 
-def evaluate(manifest: dict[str, Any], runs: list[dict[str, Any]]) -> dict[str, Any]:
+def evaluate(
+    manifest: dict[str, Any], runs: list[dict[str, Any]], traces: dict[str, Any] | None = None
+) -> dict[str, Any]:
     scenarios = {item["id"]: item for item in manifest.get("scenarios", [])}
     reports: list[dict[str, Any]] = []
     unknown: list[str] = []
@@ -118,7 +255,8 @@ def evaluate(manifest: dict[str, Any], runs: list[dict[str, Any]]) -> dict[str, 
         if scenario is None:
             unknown.append(str(scenario_id))
             continue
-        reports.append(score_run(scenario, run))
+        trace_id = run.get("trace_id")
+        reports.append(score_run(scenario, run, (traces or {}).get(trace_id) if isinstance(trace_id, str) else None))
 
     submitted = {report["scenario_id"] for report in reports}
     missing = sorted(set(scenarios) - submitted)
@@ -147,12 +285,18 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
     parser.add_argument("--output", type=Path, help="write the JSON report to this path")
     parser.add_argument("--allow-missing", action="store_true", help="do not fail solely because scenarios are missing")
+    parser.add_argument(
+        "--trace-dir", type=Path, help="harness-owned trace/result directory; default: results sibling traces/"
+    )
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
-    report = evaluate(_load_json(args.manifest), _load_runs(args.results))
+    runs = _load_runs(args.results)
+    report = evaluate(
+        _load_json(args.manifest), runs, load_traces(args.trace_dir or args.results.parent / "traces", runs)
+    )
     rendered = json.dumps(report, ensure_ascii=False, indent=2) + "\n"
     if args.output:
         args.output.write_text(rendered, encoding="utf-8")

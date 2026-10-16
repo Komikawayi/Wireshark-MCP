@@ -53,6 +53,26 @@ Claude: [calls wireshark_extract_dns_queries → wireshark_detect_dns_tunnel]
 
 ## Install
 
+### Claude Code / Codex plugin route
+
+Prerequisites: `uv` and Wireshark CLI (`tshark`). The plugin includes this project and both skills; the client runs the locked Python project through uv over stdio. It does not install Wireshark or capture drivers.
+
+From a checkout containing these plugin manifests, choose your client:
+
+```sh
+# Codex
+codex plugin marketplace add .
+codex plugin add wireshark-mcp@wireshark-mcp
+
+# Claude Code
+claude plugin marketplace add .
+claude plugin install wireshark-mcp@wireshark-mcp
+```
+
+See [plugin distribution](docs/plugin-installation.md) for local installation, old-version refresh, environment settings and the GitHub entrypoint after publication. Choose this route or the traditional registration route below, not both.
+
+### Traditional Python package route
+
 **Prerequisites:** Python 3.10+ and [Wireshark](https://www.wireshark.org/) with `tshark` on PATH.
 
 Wireshark MCP 3.0 uses the stable MCP Python SDK 2.x line (`mcp>=2.1.1,<3`).
@@ -62,7 +82,16 @@ pip install wireshark-mcp
 wireshark-mcp install   # choose from detected MCP clients
 ```
 
-Restart your AI client — done.
+For scripts/non-interactive terminals, select clients explicitly. Preview before installing into the current project:
+
+```sh
+wireshark-mcp install --client codex --scope project --dry-run
+wireshark-mcp install --client codex --scope project
+```
+
+The default scope is `global`. Repeat `--client` or explicitly use `--client all`. Restart the client to load configuration. See the [installation guide](docs/installation.md) for updates, removal, backups and exit codes.
+
+The project also ships MCP and full TShark CLI analysis skills; see [skill discovery and usage](docs/skills.md).
 
 Run `wireshark-mcp doctor` if anything looks off. See [docs/manual-configuration.md](docs/manual-configuration.md) for manual setup or platform-specific notes.
 

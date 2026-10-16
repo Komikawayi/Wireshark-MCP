@@ -17,6 +17,11 @@ from ..toolchain import WIRESHARK_TOOL_ENV_VARS
 
 def _get_python_executable() -> str:
     """Resolve the actual Python executable path."""
+    # Directly invoking a venv script does not set VIRTUAL_ENV. Its sys.path
+    # still includes the base interpreter's stdlib zip: choosing that zip's
+    # interpreter loses the environment containing wireshark-mcp.
+    if sys.prefix != sys.base_prefix and os.path.isfile(sys.executable):
+        return sys.executable
     venv = os.environ.get("VIRTUAL_ENV")
     if venv:
         if sys.platform == "win32":

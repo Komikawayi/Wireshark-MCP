@@ -49,7 +49,7 @@ def register_extract_tools(mcp: MCPServer, client: TSharkClient) -> None:
     async def wireshark_extract_fields(
         pcap_file: str, fields: str, display_filter: str = "", limit: int = 100, offset: int = 0
     ) -> str:
-        """[Tabular] Extract fields as TSV. fields: comma-separated (e.g. "ip.src,tcp.port,http.host")."""
+        """[Tabular] Extract fields as TSV. fields: comma-separated; limit/offset count lines including the header."""
         field_list = [f.strip() for f in fields.split(",")]
         return normalize_tool_result(
             await client.extract_fields(pcap_file, field_list, display_filter, limit=limit, offset=offset)

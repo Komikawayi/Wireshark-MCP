@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "wireshark-mcp": {
+      "command": "uv",
+      "args": ["run", "--locked", "--no-dev", "wireshark-mcp", "serve", "--transport", "stdio"],
+      "cwd": ".",
+      "env_vars": [
+        "WIRESHARK_MCP_ALLOWED_DIRS",
+        "WIRESHARK_MCP_TSHARK_PATH",
+        "WIRESHARK_MCP_CAPINFOS_PATH",
+        "WIRESHARK_MCP_MERGECAP_PATH",
+        "WIRESHARK_MCP_EDITCAP_PATH",
+        "WIRESHARK_MCP_DUMPCAP_PATH",
+        "WIRESHARK_MCP_TEXT2PCAP_PATH",
+        "WIRESHARK_MCP_MAX_RESULT_CHARS"
+      ]
+    }
+  }
+}
