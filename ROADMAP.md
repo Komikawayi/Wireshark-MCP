@@ -40,7 +40,7 @@ Exit criterion: results are reproducible, scan boundaries and limitations are ex
 - [x] **CLI Skill implementation and release gates:** full 4.6.9 capability catalog, on-demand guides, bounded execution, Codex discovery and trace-bound evaluation. Public release and comparative Agent effectiveness claims remain separate.
 - [ ] **Standalone tshark CLI Skill:** formal release of `tshark-cli-analysis` with automation recipes and shell pipelines.
 - [ ] **MCP vs Native CLI Benchmarks:** the reproducible engine runner and accuracy-gated Agent comparison are implemented; independent multi-run Agent results and large-capture scaling remain to be published.
-- [ ] **Configurable scan policies:** server-side configurable packet ceilings and timeout budgets.
+- [x] **Configurable scan policies:** server-side configurable packet ceilings and timeout budgets.
 
 Exit criterion: numeric aggregation and pagination have real-tshark tests, deterministic output, bounded memory, and examples in both aggregation guides.
 

@@ -93,6 +93,7 @@ wireshark_aggregate(
 ## 边界与解释
 
 - 匹配包超过 1,000,000 行时，工具提前停止并返回 `LimitExceeded`。此时应收紧 `display_filter`，或按有业务含义的时间窗口拆分抓包。
+- 服务端可以用 `WIRESHARK_MCP_AGGREGATE_SCAN_LIMIT`（行数上限，限定在 1,000–10,000,000）和 `WIRESHARK_MCP_AGGREGATE_TIMEOUT`（秒，默认 30，限定在 5–600）调整扫描策略。配置在服务启动时读取一次，非法值回退到默认值；`coverage.limit` 始终报告实际生效的行数上限。
 - 流式 stdout 另有 50 MiB 上限。即使包数没有达到行数上限，异常宽的字段值也不能绕过内存边界。
 - `top_k` 只控制返回的分组，不截断统计输入，因此排名仍然基于完整结果。
 - 分组键来自 tshark 字段文本。除时间桶前缀按数值排序外，键排序均为字典序。
