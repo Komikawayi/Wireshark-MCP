@@ -14,7 +14,7 @@ The helper creates a new output directory and exclusive files, records input SHA
 
 The runner is for offline read/dissection, not a sandbox for arbitrary extensions. It rejects capture/file-writing/extension flags that need separate supervision. Direct live capture, `-w`, Lua, object/PDU/key export and provider-specific workflows remain fully documented in the corresponding references; execute them deliberately with their own storage/permission boundaries. Never claim the console cap also bounds those outputs.
 
-For direct commands, set timeout and storage monitoring appropriate to the capture. Use argv arrays, no shell interpolation of packet strings; write raw data to separate artifacts. POSIX pipelines need TShark's own exit status, not just the consumer's. On timeout/overflow, preserve diagnostics, label partial and change the query. A final successful pipeline stage is not completion of its producer.
+For direct commands, set timeout and storage monitoring appropriate to the capture. Use argv arrays, no shell interpolation of packet strings; write raw data to separate artifacts. POSIX pipelines need TShark's own exit status, not just the consumer's. On timeout/overflow, preserve diagnostics, label partial and change the query. A final successful pipeline stage is not completion of its producer. Pipeline, scripting and many-capture batch patterns, including the [batch helper](../scripts/batch_tshark.py), are in [automation-and-pipelines.md](automation-and-pipelines.md).
 
 ## Interpretation gates
 

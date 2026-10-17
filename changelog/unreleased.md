@@ -17,6 +17,12 @@
   baseline; on-demand execution guides, capability-gap inventory and a bounded
   offline runner cover capture, filters, dissection/decryption, all output
   families, statistics/streams, exports and Lua/extcap workflows.
+- `tshark-cli-analysis` release guide for automation: exit-status-safe shell
+  pipelines, script-ready field/JSON/EK extraction, live capture into consumers,
+  ring-buffer post-processing, merge/split preparation and CI gates. New
+  `batch_tshark.py` applies the bounded runner to many captures with per-input
+  records and a complete/partial/error summary; the runner exposes reusable
+  `prepare`/`execute` steps without changing its CLI.
 - MCP investigation references for answerability, diagnostic decisions, verified
   query shapes, protocol branches and resumable multi-capture evidence.
 - Harness-trace-bound evaluation with input/result integrity checks, observed
@@ -84,6 +90,10 @@
 - 原生 TShark CLI Skill 完整能力参考：4.6.9 基线覆盖 93 种选项拼写、18 类
   glossary 报告和 197 个已注册统计/流追踪名称；按需加载抓包、过滤、解码解密、
   输出、统计、导出、Lua/extcap 指南，附能力差异盘点与有界离线执行助手。
+- `tshark-cli-analysis` 正式版自动化指南：保留退出码的 shell 管道、可供脚本解析的
+  字段/JSON/EK 提取、实时抓包接管道、环形缓冲后处理、合并/切分预处理与 CI 门禁。
+  新增 `batch_tshark.py`，对多个抓包逐个套用有界执行并输出完整/部分/失败汇总；
+  执行助手拆出可复用的 `prepare`/`execute`，命令行用法不变。
 - MCP Skill 补充可回答性检查、诊断决策、已验证调用模板、专项协议与跨文件交接。
 - 评测扩展至 20 个场景，关联独立执行记录、输入/结果摘要与实际锚点；分发及 wheel
   门禁覆盖两个 Skill，不将格式检查或合成测试冒充模型效果提升。

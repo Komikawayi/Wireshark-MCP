@@ -38,7 +38,7 @@ Exit criterion: results are reproducible, scan boundaries and limitations are ex
 - [x] **True streaming accumulator:** stream row-by-row into reduction aggregators to eliminate large intermediate string and list allocations.
 - [x] **Numeric reducers:** add `sum`, `min`, `max`, and `avg` over numeric tshark fields (bytes, payload lengths, response times).
 - [x] **CLI Skill implementation and release gates:** full 4.6.9 capability catalog, on-demand guides, bounded execution, Codex discovery and trace-bound evaluation. Public release and comparative Agent effectiveness claims remain separate.
-- [ ] **Standalone tshark CLI Skill:** formal release of `tshark-cli-analysis` with automation recipes and shell pipelines.
+- [x] **Standalone tshark CLI Skill:** formal release of `tshark-cli-analysis` with automation recipes and shell pipelines.
 - [ ] **MCP vs Native CLI Benchmarks:** the reproducible engine runner and accuracy-gated Agent comparison are implemented; independent multi-run Agent results and large-capture scaling remain to be published.
 - [ ] **Configurable scan policies:** server-side configurable packet ceilings and timeout budgets.
 
