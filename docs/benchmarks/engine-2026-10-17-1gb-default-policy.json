@@ -1,0 +1,579 @@
+{
+  "schema_version": 2,
+  "benchmark": "analysis-path-engine-baseline",
+  "scope": "Execution primitives only; this does not measure Agent accuracy, evidence quality, or tokens.",
+  "environment": {
+    "platform": "Linux-6.18.44-fc-v139-x86_64-with-glibc2.39",
+    "python": "3.13.16",
+    "tshark": "TShark (Wireshark) 4.2.2 (Git v4.2.2 packaged as 4.2.2-1.1build3).",
+    "scan_policy_env": {}
+  },
+  "summary": {
+    "mcp": {
+      "scenarios": 5,
+      "scenarios_passed": 5,
+      "error_rate": 0.0,
+      "mean_setup_ms": 712.245,
+      "mean_elapsed_ms": 145.755,
+      "p50_elapsed_ms": 145.281,
+      "p95_elapsed_ms": 161.214,
+      "max_combined_peak_rss_bytes": 225464320,
+      "process_calls": 5,
+      "token_cost": null
+    },
+    "tshark-cli": {
+      "scenarios": 5,
+      "scenarios_passed": 5,
+      "error_rate": 0.0,
+      "mean_setup_ms": 0.0,
+      "mean_elapsed_ms": 147.331,
+      "p50_elapsed_ms": 143.724,
+      "p95_elapsed_ms": 169.378,
+      "max_combined_peak_rss_bytes": 176631808,
+      "process_calls": 5,
+      "token_cost": null
+    }
+  },
+  "scaling": {
+    "1000MB": {
+      "capture_bytes": 1000000318,
+      "packets": 1561889,
+      "seed": 3101,
+      "summary": {
+        "mcp": {
+          "scenarios": 5,
+          "scenarios_passed": 0,
+          "error_rate": 1.0,
+          "mean_setup_ms": 750.471,
+          "mean_elapsed_ms": 30032.844,
+          "p50_elapsed_ms": 30032.965,
+          "p95_elapsed_ms": 30037.213,
+          "max_combined_peak_rss_bytes": 1049223168,
+          "process_calls": 5,
+          "token_cost": null
+        },
+        "tshark-cli": {
+          "scenarios": 5,
+          "scenarios_passed": 5,
+          "error_rate": 0.0,
+          "mean_setup_ms": 0.0,
+          "mean_elapsed_ms": 50867.975,
+          "p50_elapsed_ms": 51155.625,
+          "p95_elapsed_ms": 54223.148,
+          "max_combined_peak_rss_bytes": 2016485376,
+          "process_calls": 5,
+          "token_cost": null
+        }
+      }
+    }
+  },
+  "records": [
+    {
+      "scenario_id": "packet_count",
+      "variant": "mcp",
+      "tier": "fixture",
+      "iterations": 1,
+      "warmup_iterations": 0,
+      "setup_ms": 684.023328,
+      "passed": true,
+      "expected": {
+        "packet_count": 3
+      },
+      "facts": {
+        "packet_count": 3
+      },
+      "errors": [],
+      "elapsed_ms": [
+        135.83627
+      ],
+      "peak_rss_bytes": {
+        "worker": 73662464,
+        "tshark": 151801856,
+        "combined_estimate": 225464320
+      },
+      "process_calls": 1
+    },
+    {
+      "scenario_id": "primary_source",
+      "variant": "mcp",
+      "tier": "fixture",
+      "iterations": 1,
+      "warmup_iterations": 0,
+      "setup_ms": 679.42281,
+      "passed": true,
+      "expected": {
+        "primary_source": "192.168.1.10",
+        "primary_source_packets": 3
+      },
+      "facts": {
+        "primary_source": "192.168.1.10",
+        "primary_source_packets": 3
+      },
+      "errors": [],
+      "elapsed_ms": [
+        133.628891
+      ],
+      "peak_rss_bytes": {
+        "worker": 73629696,
+        "tshark": 151699456,
+        "combined_estimate": 225329152
+      },
+      "process_calls": 1
+    },
+    {
+      "scenario_id": "dns_query_count",
+      "variant": "mcp",
+      "tier": "fixture",
+      "iterations": 1,
+      "warmup_iterations": 0,
+      "setup_ms": 731.951811,
+      "passed": true,
+      "expected": {
+        "dns_query_count": 27
+      },
+      "facts": {
+        "dns_query_count": 27
+      },
+      "errors": [],
+      "elapsed_ms": [
+        161.213757
+      ],
+      "peak_rss_bytes": {
+        "worker": 73662464,
+        "tshark": 151740416,
+        "combined_estimate": 225402880
+      },
+      "process_calls": 1
+    },
+    {
+      "scenario_id": "literal_user_agent",
+      "variant": "mcp",
+      "tier": "fixture",
+      "iterations": 1,
+      "warmup_iterations": 0,
+      "setup_ms": 722.762009,
+      "passed": true,
+      "expected": {
+        "distinct_http_user_agents": 1
+      },
+      "facts": {
+        "distinct_http_user_agents": 1
+      },
+      "errors": [],
+      "elapsed_ms": [
+        145.280528
+      ],
+      "peak_rss_bytes": {
+        "worker": 73748480,
+        "tshark": 151633920,
+        "combined_estimate": 225382400
+      },
+      "process_calls": 1
+    },
+    {
+      "scenario_id": "numeric_frame_bytes",
+      "variant": "mcp",
+      "tier": "fixture",
+      "iterations": 1,
+      "warmup_iterations": 0,
+      "setup_ms": 743.065249,
+      "passed": true,
+      "expected": {
+        "frame_bytes": 304.0
+      },
+      "facts": {
+        "frame_bytes": 304.0
+      },
+      "errors": [],
+      "elapsed_ms": [
+        152.816008
+      ],
+      "peak_rss_bytes": {
+        "worker": 73748480,
+        "tshark": 151674880,
+        "combined_estimate": 225423360
+      },
+      "process_calls": 1
+    },
+    {
+      "scenario_id": "packet_count",
+      "variant": "tshark-cli",
+      "tier": "fixture",
+      "iterations": 1,
+      "warmup_iterations": 0,
+      "setup_ms": 0.000589,
+      "passed": true,
+      "expected": {
+        "packet_count": 3
+      },
+      "facts": {
+        "packet_count": 3
+      },
+      "errors": [],
+      "elapsed_ms": [
+        169.378085
+      ],
+      "peak_rss_bytes": {
+        "worker": 24760320,
+        "tshark": 151691264,
+        "combined_estimate": 176451584
+      },
+      "process_calls": 1
+    },
+    {
+      "scenario_id": "primary_source",
+      "variant": "tshark-cli",
+      "tier": "fixture",
+      "iterations": 1,
+      "warmup_iterations": 0,
+      "setup_ms": 0.000373,
+      "passed": true,
+      "expected": {
+        "primary_source": "192.168.1.10",
+        "primary_source_packets": 3
+      },
+      "facts": {
+        "primary_source": "192.168.1.10",
+        "primary_source_packets": 3
+      },
+      "errors": [],
+      "elapsed_ms": [
+        138.324575
+      ],
+      "peak_rss_bytes": {
+        "worker": 24621056,
+        "tshark": 151711744,
+        "combined_estimate": 176332800
+      },
+      "process_calls": 1
+    },
+    {
+      "scenario_id": "dns_query_count",
+      "variant": "tshark-cli",
+      "tier": "fixture",
+      "iterations": 1,
+      "warmup_iterations": 0,
+      "setup_ms": 0.00069,
+      "passed": true,
+      "expected": {
+        "dns_query_count": 27
+      },
+      "facts": {
+        "dns_query_count": 27
+      },
+      "errors": [],
+      "elapsed_ms": [
+        143.723796
+      ],
+      "peak_rss_bytes": {
+        "worker": 24621056,
+        "tshark": 151678976,
+        "combined_estimate": 176300032
+      },
+      "process_calls": 1
+    },
+    {
+      "scenario_id": "literal_user_agent",
+      "variant": "tshark-cli",
+      "tier": "fixture",
+      "iterations": 1,
+      "warmup_iterations": 0,
+      "setup_ms": 0.000265,
+      "passed": true,
+      "expected": {
+        "distinct_http_user_agents": 1
+      },
+      "facts": {
+        "distinct_http_user_agents": 1
+      },
+      "errors": [],
+      "elapsed_ms": [
+        151.538696
+      ],
+      "peak_rss_bytes": {
+        "worker": 24723456,
+        "tshark": 151851008,
+        "combined_estimate": 176574464
+      },
+      "process_calls": 1
+    },
+    {
+      "scenario_id": "numeric_frame_bytes",
+      "variant": "tshark-cli",
+      "tier": "fixture",
+      "iterations": 1,
+      "warmup_iterations": 0,
+      "setup_ms": 0.00056,
+      "passed": true,
+      "expected": {
+        "frame_bytes": 304.0
+      },
+      "facts": {
+        "frame_bytes": 304.0
+      },
+      "errors": [],
+      "elapsed_ms": [
+        133.689134
+      ],
+      "peak_rss_bytes": {
+        "worker": 24809472,
+        "tshark": 151822336,
+        "combined_estimate": 176631808
+      },
+      "process_calls": 1
+    },
+    {
+      "scenario_id": "packet_count",
+      "variant": "mcp",
+      "tier": "1000MB",
+      "iterations": 1,
+      "warmup_iterations": 0,
+      "setup_ms": 750.886593,
+      "passed": false,
+      "expected": {
+        "packet_count": 1561889
+      },
+      "facts": {},
+      "errors": [
+        "{\"type\": \"TimeoutError\", \"message\": \"Command timed out after 30 seconds\"}"
+      ],
+      "elapsed_ms": [
+        30028.45662
+      ],
+      "peak_rss_bytes": {
+        "worker": 73523200,
+        "tshark": 839872512,
+        "combined_estimate": 913395712
+      },
+      "process_calls": 1
+    },
+    {
+      "scenario_id": "primary_source",
+      "variant": "mcp",
+      "tier": "1000MB",
+      "iterations": 1,
+      "warmup_iterations": 0,
+      "setup_ms": 732.054927,
+      "passed": false,
+      "expected": {
+        "primary_source": "10.255.0.53",
+        "primary_source_packets": 124712
+      },
+      "facts": {},
+      "errors": [
+        "{\"type\": \"TimeoutError\", \"message\": \"Command timed out after 30 seconds\"}"
+      ],
+      "elapsed_ms": [
+        30028.62365
+      ],
+      "peak_rss_bytes": {
+        "worker": 73932800,
+        "tshark": 851021824,
+        "combined_estimate": 924954624
+      },
+      "process_calls": 1
+    },
+    {
+      "scenario_id": "dns_query_count",
+      "variant": "mcp",
+      "tier": "1000MB",
+      "iterations": 1,
+      "warmup_iterations": 0,
+      "setup_ms": 780.01431,
+      "passed": false,
+      "expected": {
+        "dns_query_count": 125069
+      },
+      "facts": {},
+      "errors": [
+        "{\"type\": \"TimeoutError\", \"message\": \"Command timed out after 30 seconds\"}"
+      ],
+      "elapsed_ms": [
+        30032.96455
+      ],
+      "peak_rss_bytes": {
+        "worker": 73707520,
+        "tshark": 922955776,
+        "combined_estimate": 996663296
+      },
+      "process_calls": 1
+    },
+    {
+      "scenario_id": "literal_user_agent",
+      "variant": "mcp",
+      "tier": "1000MB",
+      "iterations": 1,
+      "warmup_iterations": 0,
+      "setup_ms": 734.224243,
+      "passed": false,
+      "expected": {
+        "distinct_http_user_agents": 3
+      },
+      "facts": {},
+      "errors": [
+        "{\"type\": \"TimeoutError\", \"message\": \"Command timed out after 30 seconds\"}"
+      ],
+      "elapsed_ms": [
+        30037.212634
+      ],
+      "peak_rss_bytes": {
+        "worker": 73613312,
+        "tshark": 902885376,
+        "combined_estimate": 976498688
+      },
+      "process_calls": 1
+    },
+    {
+      "scenario_id": "numeric_frame_bytes",
+      "variant": "mcp",
+      "tier": "1000MB",
+      "iterations": 1,
+      "warmup_iterations": 0,
+      "setup_ms": 755.176119,
+      "passed": false,
+      "expected": {
+        "frame_bytes": 975010070.0
+      },
+      "facts": {},
+      "errors": [
+        "{\"type\": \"TimeoutError\", \"message\": \"Command timed out after 30 seconds\"}"
+      ],
+      "elapsed_ms": [
+        30036.964519
+      ],
+      "peak_rss_bytes": {
+        "worker": 73592832,
+        "tshark": 975630336,
+        "combined_estimate": 1049223168
+      },
+      "process_calls": 1
+    },
+    {
+      "scenario_id": "packet_count",
+      "variant": "tshark-cli",
+      "tier": "1000MB",
+      "iterations": 1,
+      "warmup_iterations": 0,
+      "setup_ms": 0.000377,
+      "passed": true,
+      "expected": {
+        "packet_count": 1561889
+      },
+      "facts": {
+        "packet_count": 1561889
+      },
+      "errors": [],
+      "elapsed_ms": [
+        51155.624974
+      ],
+      "peak_rss_bytes": {
+        "worker": 402526208,
+        "tshark": 1483534336,
+        "combined_estimate": 1886060544
+      },
+      "process_calls": 1
+    },
+    {
+      "scenario_id": "primary_source",
+      "variant": "tshark-cli",
+      "tier": "1000MB",
+      "iterations": 1,
+      "warmup_iterations": 0,
+      "setup_ms": 0.000425,
+      "passed": true,
+      "expected": {
+        "primary_source": "10.255.0.53",
+        "primary_source_packets": 124712
+      },
+      "facts": {
+        "primary_source": "10.255.0.53",
+        "primary_source_packets": 124712
+      },
+      "errors": [],
+      "elapsed_ms": [
+        54223.147658
+      ],
+      "peak_rss_bytes": {
+        "worker": 532832256,
+        "tshark": 1483653120,
+        "combined_estimate": 2016485376
+      },
+      "process_calls": 1
+    },
+    {
+      "scenario_id": "dns_query_count",
+      "variant": "tshark-cli",
+      "tier": "1000MB",
+      "iterations": 1,
+      "warmup_iterations": 0,
+      "setup_ms": 0.00036,
+      "passed": true,
+      "expected": {
+        "dns_query_count": 125069
+      },
+      "facts": {
+        "dns_query_count": 125069
+      },
+      "errors": [],
+      "elapsed_ms": [
+        45821.545697
+      ],
+      "peak_rss_bytes": {
+        "worker": 55160832,
+        "tshark": 1483632640,
+        "combined_estimate": 1538793472
+      },
+      "process_calls": 1
+    },
+    {
+      "scenario_id": "literal_user_agent",
+      "variant": "tshark-cli",
+      "tier": "1000MB",
+      "iterations": 1,
+      "warmup_iterations": 0,
+      "setup_ms": 0.000384,
+      "passed": true,
+      "expected": {
+        "distinct_http_user_agents": 3
+      },
+      "facts": {
+        "distinct_http_user_agents": 3
+      },
+      "errors": [],
+      "elapsed_ms": [
+        49102.407352
+      ],
+      "peak_rss_bytes": {
+        "worker": 47087616,
+        "tshark": 1483583488,
+        "combined_estimate": 1530671104
+      },
+      "process_calls": 1
+    },
+    {
+      "scenario_id": "numeric_frame_bytes",
+      "variant": "tshark-cli",
+      "tier": "1000MB",
+      "iterations": 1,
+      "warmup_iterations": 0,
+      "setup_ms": 0.000412,
+      "passed": true,
+      "expected": {
+        "frame_bytes": 975010070.0
+      },
+      "facts": {
+        "frame_bytes": 975010070.0
+      },
+      "errors": [],
+      "elapsed_ms": [
+        54037.150936
+      ],
+      "peak_rss_bytes": {
+        "worker": 488767488,
+        "tshark": 1483444224,
+        "combined_estimate": 1972211712
+      },
+      "process_calls": 1
+    }
+  ]
+}
