@@ -46,3 +46,19 @@ def test_summary_keeps_tokens_explicitly_unmeasured() -> None:
 @pytest.mark.parametrize("scenario_id", list(MODULE.SCENARIOS))
 def test_native_cli_benchmark_queries_return_expected_facts(scenario_id: str) -> None:
     assert MODULE.run_cli(scenario_id, shutil.which("tshark")) == MODULE.SCENARIOS[scenario_id]["expected"]
+
+
+def test_synthetic_scaling_capture_is_deterministic(tmp_path: Path) -> None:
+    first = MODULE.write_synthetic_capture(tmp_path / "a.pcap", 200_000)
+    second = MODULE.write_synthetic_capture(tmp_path / "b.pcap", 200_000)
+    assert first == second
+    assert (tmp_path / "a.pcap").read_bytes() == (tmp_path / "b.pcap").read_bytes()
+    assert set(first["facts"]) == set(MODULE.SCENARIOS)
+
+
+@pytest.mark.skipif(shutil.which("tshark") is None, reason="tshark not installed")
+def test_synthetic_scaling_facts_match_native_tshark(tmp_path: Path) -> None:
+    capture = tmp_path / "scale.pcap"
+    manifest = MODULE.write_synthetic_capture(capture, 300_000)
+    for scenario_id in MODULE.SCENARIOS:
+        assert MODULE.run_cli(scenario_id, shutil.which("tshark"), capture) == manifest["facts"][scenario_id]
