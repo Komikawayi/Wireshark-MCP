@@ -134,31 +134,26 @@ def run_bounded(argv: list[str], stdout: BinaryIO, stderr: BinaryIO, *, timeout:
     }
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--input", type=Path, required=True)
-    parser.add_argument("--output-dir", type=Path, required=True, help="new directory, never overwritten")
-    parser.add_argument("--tshark", default="tshark")
-    parser.add_argument("--timeout", type=float, default=30)
-    parser.add_argument("--max-output-bytes", type=int, default=1048576)
-    parser.add_argument("args", nargs=argparse.REMAINDER)
-    args = parser.parse_args(argv)
-    tail = args.args[1:] if args.args[:1] == ["--"] else args.args
-    try:
-        validate_args(tail)
-        if not math.isfinite(args.timeout) or args.timeout <= 0 or args.max_output_bytes <= 0:
-            raise ValueError("timeout and output budget must be finite and positive")
-        capture = args.input.resolve(strict=True)
-        if not capture.is_file():
-            raise ValueError("input must be a regular capture file")
-        identity = {"path": str(capture), "sha256": digest(capture), "size": capture.stat().st_size}
-        args.output_dir.mkdir(parents=True, exist_ok=False)
-    except (OSError, ValueError) as exc:
-        parser.error(str(exc))
-    command = [args.tshark, "-n", "-r", str(capture), *tail]
-    with (args.output_dir / "stdout.bin").open("xb") as out, (args.output_dir / "stderr.bin").open("xb") as err:
+def prepare(input_path: Path, output_dir: Path, *, timeout: float, budget: int, tail: list[str]) -> dict:
+    """Validate one offline run and create its exclusive output directory; return the input identity."""
+    validate_args(tail)
+    if not math.isfinite(timeout) or timeout <= 0 or budget <= 0:
+        raise ValueError("timeout and output budget must be finite and positive")
+    capture = input_path.resolve(strict=True)
+    if not capture.is_file():
+        raise ValueError("input must be a regular capture file")
+    identity = {"path": str(capture), "sha256": digest(capture), "size": capture.stat().st_size}
+    output_dir.mkdir(parents=True, exist_ok=False)
+    return identity
+
+
+def execute(identity: dict, output_dir: Path, *, tshark: str, timeout: float, budget: int, tail: list[str]) -> dict:
+    """Run one prepared offline query and write its execution record."""
+    capture = Path(identity["path"])
+    command = [tshark, "-n", "-r", str(capture), *tail]
+    with (output_dir / "stdout.bin").open("xb") as out, (output_dir / "stderr.bin").open("xb") as err:
         try:
-            execution = run_bounded(command, out, err, timeout=args.timeout, budget=args.max_output_bytes)
+            execution = run_bounded(command, out, err, timeout=timeout, budget=budget)
         except OSError as exc:
             execution = {"status": "error", "returncode": None, "error": str(exc)}
     try:
@@ -175,23 +170,48 @@ def main(argv: list[str] | None = None) -> int:
         "execution": execution,
         "coverage": {"status": "complete" if complete else "partial"},
         "artifacts": {
-            name: {"path": str((args.output_dir / name).resolve()), "sha256": digest(args.output_dir / name)}
+            name: {"path": str((output_dir / name).resolve()), "sha256": digest(output_dir / name)}
             for name in ("stdout.bin", "stderr.bin")
         },
     }
-    (args.output_dir / "execution.json").write_text(
+    (output_dir / "execution.json").write_text(
         json.dumps(record, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
+    return record
+
+
+def exit_code(record: dict) -> int:
+    if record["input_changed"]:
+        return 1
+    return {"completed": 0, "timeout": 124, "output_limit": 125}.get(record["execution"]["status"], 1)
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--input", type=Path, required=True)
+    parser.add_argument("--output-dir", type=Path, required=True, help="new directory, never overwritten")
+    parser.add_argument("--tshark", default="tshark")
+    parser.add_argument("--timeout", type=float, default=30)
+    parser.add_argument("--max-output-bytes", type=int, default=1048576)
+    parser.add_argument("args", nargs=argparse.REMAINDER)
+    args = parser.parse_args(argv)
+    tail = args.args[1:] if args.args[:1] == ["--"] else args.args
+    limits = {"timeout": args.timeout, "budget": args.max_output_bytes, "tail": tail}
+    try:
+        identity = prepare(args.input, args.output_dir, **limits)
+    except (OSError, ValueError) as exc:
+        parser.error(str(exc))
+    record = execute(identity, args.output_dir, tshark=args.tshark, **limits)
     print(
         json.dumps(
             {
-                "status": execution["status"],
+                "status": record["execution"]["status"],
                 "coverage": record["coverage"]["status"],
                 "record": str((args.output_dir / "execution.json").resolve()),
             }
         )
     )
-    return {"completed": 0, "timeout": 124, "output_limit": 125}.get(execution["status"], 1) if not changed else 1
+    return exit_code(record)
 
 
 if __name__ == "__main__":

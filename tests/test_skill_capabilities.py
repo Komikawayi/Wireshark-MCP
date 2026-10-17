@@ -32,6 +32,8 @@ def _module(name: str, file: Path):
 
 INVENTORY = _module("tshark_inventory", CLI / "scripts/tshark_inventory.py")
 RUNNER = _module("run_tshark", CLI / "scripts/run_tshark.py")
+BATCH = _module("batch_tshark", CLI / "scripts/batch_tshark.py")
+AUTOMATION = CLI / "references/automation-and-pipelines.md"
 
 
 def test_all_skill_reference_links_resolve() -> None:
@@ -234,3 +236,131 @@ def test_real_documented_statistics_filters_formats_and_derived_file(tmp_path: P
 def test_unfamiliar_plugin_names_are_not_silently_dropped() -> None:
     assert INVENTORY.parse_statistics("     VendorX,latency.v2\n") == ["VendorX,latency.v2"]
     assert INVENTORY.parse_reports("  -G VendorReport2  extra data\n") == ["VendorReport2"]
+
+
+def _shell_blocks(document: Path) -> list[str]:
+    return re.findall(r"```sh\n(.*?)```", document.read_text(encoding="utf-8"), flags=re.S)
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="requires bash")
+def test_automation_guide_shell_examples_parse_and_disable_name_resolution() -> None:
+    blocks = _shell_blocks(AUTOMATION)
+    assert len(blocks) >= 8
+    for block in blocks:
+        checked = subprocess.run(["bash", "-n"], input=block, capture_output=True, text=True, timeout=10)
+        assert checked.returncode == 0, (block, checked.stderr)
+        for line in block.splitlines():
+            if re.match(r"\s*tshark ", line):
+                assert " -n " in line, line
+    assert "set -o pipefail" in blocks[0] and "PIPESTATUS" in blocks[0]
+
+
+def _fake_tshark(tmp_path: Path) -> str:
+    # Emits one row per call and fails for inputs whose name contains "bad".
+    script = tmp_path / "fake-tshark"
+    script.write_text(
+        f"#!{sys.executable}\n"
+        "import sys\n"
+        "path = sys.argv[sys.argv.index('-r') + 1]\n"
+        "if 'bad' in path:\n"
+        "    sys.stderr.write('tshark: unreadable\\n'); sys.exit(2)\n"
+        "print('1')\n",
+        encoding="utf-8",
+    )
+    script.chmod(0o755)
+    return str(script)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="fake engine uses a shebang script")
+def test_batch_helper_records_each_input_and_summarizes_coverage(tmp_path: Path) -> None:
+    for directory in ("a", "b"):
+        (tmp_path / "in" / directory).mkdir(parents=True)
+        (tmp_path / "in" / directory / "same.pcap").write_bytes(b"capture-" + directory.encode())
+    (tmp_path / "in" / "bad.pcap").write_bytes(b"broken")
+    (tmp_path / "in" / "notes.txt").write_text("not selected", encoding="utf-8")
+    destination = tmp_path / "batch"
+    code = BATCH.main(
+        [
+            "--input-dir",
+            str(tmp_path / "in"),
+            "--recursive",
+            "--output-dir",
+            str(destination),
+            "--tshark",
+            _fake_tshark(tmp_path),
+            "--jobs",
+            "2",
+            "--",
+            "-T",
+            "fields",
+            "-e",
+            "frame.number",
+        ]
+    )
+    assert code == 1
+    batch = json.loads((destination / "batch.json").read_text(encoding="utf-8"))
+    assert batch["counts"] == {"inputs": 3, "complete": 2, "partial": 0, "error": 1}
+    runs = {Path(run["input"]).relative_to((tmp_path / "in").resolve()).as_posix(): run for run in batch["runs"]}
+    assert set(runs) == {"a/same.pcap", "b/same.pcap", "bad.pcap"}
+    assert runs["bad.pcap"]["status"] == "error" and runs["bad.pcap"]["returncode"] == 2
+    assert len({run["run_dir"] for run in runs.values()}) == 3
+    for name in ("a/same.pcap", "b/same.pcap"):
+        assert Path(runs[name]["stdout"]).read_bytes() == b"1\n"
+        record = json.loads(Path(runs[name]["record"]).read_text(encoding="utf-8"))
+        assert record["coverage"]["status"] == "complete" and len(record["input"]["sha256"]) == 64
+    rows = (destination / "summary.tsv").read_text(encoding="utf-8").splitlines()
+    assert rows[0].split("\t") == ["index", "coverage", "status", "returncode", "sha256", "input"]
+    assert len(rows) == 4
+
+
+@pytest.mark.parametrize("args", [["-w", "out.pcap"], ["-i", "en0"], ["--export-objects=http,out"]])
+def test_batch_helper_rejects_side_effects_before_creating_output(tmp_path: Path, args: list[str]) -> None:
+    capture = tmp_path / "one.pcap"
+    capture.write_bytes(b"x")
+    with pytest.raises(SystemExit) as exit_info:
+        BATCH.main(["--input", str(capture), "--output-dir", str(tmp_path / "out"), "--", *args])
+    assert exit_info.value.code == 2
+    assert not (tmp_path / "out").exists()
+
+
+@pytest.mark.skipif(shutil.which("tshark") is None, reason="requires installed tshark")
+def test_real_batch_and_pipefail_pipeline(tmp_path: Path) -> None:
+    fixtures = _module("fixtures_batch", ROOT / "tests/fixtures/generate_pcaps.py").build_all_fixtures(tmp_path / "in")
+    capture = fixtures["dns_tunnel"]
+    destination = tmp_path / "batch"
+    assert (
+        BATCH.main(
+            [
+                "--input",
+                str(capture),
+                "--input",
+                str(capture),
+                "--output-dir",
+                str(destination),
+                "--tshark",
+                shutil.which("tshark"),
+                "--",
+                "-Y",
+                "dns.flags.response == 0",
+                "-T",
+                "fields",
+                "-e",
+                "frame.number",
+            ]
+        )
+        == 0
+    )
+    batch = json.loads((destination / "batch.json").read_text(encoding="utf-8"))
+    assert batch["counts"]["inputs"] == 1 and batch["counts"]["complete"] == 1
+    assert len(Path(batch["runs"][0]["stdout"]).read_bytes().splitlines()) == 27
+    if shutil.which("bash") is None:
+        return
+    # The guide's first pipeline: per-name counts must add up to the full query count.
+    pipeline = (
+        "set -o pipefail; tshark -n -r \"$1\" -Y 'dns.flags.response == 0' -T fields -e dns.qry.name "
+        "| LC_ALL=C sort | uniq -c | LC_ALL=C sort -rn"
+    )
+    result = subprocess.run(
+        ["bash", "-c", pipeline, "pipeline", str(capture)], capture_output=True, text=True, check=True, timeout=15
+    )
+    assert sum(int(line.split()[0]) for line in result.stdout.splitlines()) == 27

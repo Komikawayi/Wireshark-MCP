@@ -3,7 +3,7 @@
 项目包含两个可独立使用的 Skill，不要求一次调查同时运行两套流程：
 
 - `wireshark-traffic-analysis`：面向 MCP，涵盖问题驱动诊断、抓包可回答性、协议分支和多文件交接。
-- `tshark-cli-analysis`：面向原生 TShark 全能力，包含版本化选项/报告/统计目录、按需参考模块、能力盘点和有界离线执行助手。
+- `tshark-cli-analysis`：面向原生 TShark 全能力，包含版本化选项/报告/统计目录、按需参考模块、能力盘点、有界离线执行助手和批处理助手，以及 shell 管道、脚本、CI 门禁和多抓包批量运行的自动化指南。
 
 源文件统一放在 `skills/`。Codex 通过 `.agents/skills/` 下提交的相对链接发现；Windows Git 若把链接检出为普通文件，运行同步命令生成真实目录。Claude/Copilot 镜像由脚本生成，不另行维护内容：
 
@@ -17,6 +17,22 @@ python scripts/sync_skills.py --check --require-installed
 wheel 包含两个 Skill 及助手脚本，但放进 site-packages 不等于客户端完成注册。可使用仓库发现命令，或通过客户端支持的机制安装选定 Skill 目录；本次改动没有宣称发布到公共插件市场。
 
 CLI 能力目录有明确版本边界，不能冻结未来所有插件行为。通常直接使用 SKILL.md 的任务路由；陌生能力再读 `references/capability-map.md`，精确选项查独立的 `references/option-index.md`。升级引擎/插件后运行 `scripts/tshark_inventory.py --check`；新增项须核对文档和测试。实际行为门禁见 [Agent 评测](agent-evaluation_zh.md)。
+
+## 独立使用 TShark CLI Skill
+
+`tshark-cli-analysis` 只依赖 TShark，可选助手脚本另需 Python 3；不需要启动 MCP 服务。在本仓库之外使用时，把整个 `skills/tshark-cli-analysis` 目录（`references/`、`scripts/` 与 `SKILL.md` 保持同级）复制到客户端的 skills 目录，或指向已安装 wheel 中的副本。常用自动化入口：
+
+```sh
+# 单次有界离线查询，生成执行记录
+python skills/tshark-cli-analysis/scripts/run_tshark.py --input capture.pcapng --output-dir run-1 \
+  -- -Y 'dns.flags.rcode != 0' -T fields -e frame.number -e dns.qry.name
+
+# 对目录内全部抓包应用同样的边界，4 个并发
+python skills/tshark-cli-analysis/scripts/batch_tshark.py --input-dir captures --output-dir batch-1 --jobs 4 \
+  -- -q -z io,phs
+```
+
+`references/automation-and-pipelines.md` 说明如何编写不丢失退出码的 shell 管道、供脚本使用的字段与 JSON/EK 提取、实时抓包接管道、环形缓冲后处理、合并/切分预处理、Python subprocess 调用和 CI 门禁。输出目录必须是新目录；两个助手都不会覆盖结果，也不会启动抓包。
 
 ## 首次安装验证
 

@@ -3,7 +3,7 @@
 Two independent skills share evidence standards, not a mandatory double workflow:
 
 - `wireshark-traffic-analysis`: MCP tools, question-driven diagnosis, answerability checks, protocol branches and multi-file handoff.
-- `tshark-cli-analysis`: the full native TShark capability surface, versioned option/report/tap catalog, selective reference modules, inventory helper and bounded offline runner.
+- `tshark-cli-analysis`: the full native TShark capability surface, versioned option/report/tap catalog, selective reference modules, inventory helper, bounded offline runner and batch helper, plus automation guidance for shell pipelines, scripts, CI gates and many-capture runs.
 
 Canonical files live under `skills/`. Repository Codex discovery uses checked-in relative links under `.agents/skills/`. If Git on Windows materializes links as ordinary files, run the sync command to replace them with real directories. Claude/Copilot mirrors are generated, not another source of truth:
 
@@ -17,6 +17,22 @@ The command only writes this repository's three discovery directories and manife
 The Python wheel includes both canonical skills and helpers. Inclusion in site-packages is **not client registration**; use the repository discovery command or install a selected skill folder through your client's supported skill mechanism. There is no claimed public plugin-marketplace publication in this change.
 
 CLI coverage is versioned, not a frozen promise about every future plugin. Normally use the entrypoint task table; consult `references/capability-map.md` for unfamiliar capabilities and the separate `references/option-index.md` for exact option lookups. Recheck with `scripts/tshark_inventory.py --check` on engine/plugin upgrades. Unknown names are reviewable gaps. See [Agent evaluation](agent-evaluation.md) for behavioral gates and their limitations.
+
+## Standalone TShark CLI skill
+
+`tshark-cli-analysis` needs only TShark and Python 3 for its optional helpers; it does not start or require the MCP server. To use it outside this repository, copy the whole `skills/tshark-cli-analysis` folder (keep `references/` and `scripts/` beside `SKILL.md`) into the client's skills directory, or point the client at the copy in an installed wheel. Typical automation entry points:
+
+```sh
+# One bounded offline query with an execution record
+python skills/tshark-cli-analysis/scripts/run_tshark.py --input capture.pcapng --output-dir run-1 \
+  -- -Y 'dns.flags.rcode != 0' -T fields -e frame.number -e dns.qry.name
+
+# The same bounds over every capture in a directory, four at a time
+python skills/tshark-cli-analysis/scripts/batch_tshark.py --input-dir captures --output-dir batch-1 --jobs 4 \
+  -- -q -z io,phs
+```
+
+`references/automation-and-pipelines.md` covers exit-status-safe shell pipelines, field and JSON/EK extraction for scripts, live capture into a consumer, ring-buffer post-processing, merge/split preparation, Python subprocess use and CI gates. Each output directory must be new; neither helper overwrites results or starts a capture.
 
 ## First-install validation
 
