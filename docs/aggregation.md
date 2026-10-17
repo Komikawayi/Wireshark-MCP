@@ -93,6 +93,7 @@ Each numeric field reports `valid_values`, `missing_values`, and `invalid_values
 ## Limits and interpretation
 
 - The tool stops and returns `LimitExceeded` when more than 1,000,000 matching packet rows are found. Narrow `display_filter` or split the capture into justified time windows.
+- Server operators can tune the scan policy with `WIRESHARK_MCP_AGGREGATE_SCAN_LIMIT` (row ceiling, clamped to 1,000–10,000,000) and `WIRESHARK_MCP_AGGREGATE_TIMEOUT` (seconds, default 30, clamped to 5–600). Values are read once at server start; invalid values fall back to the defaults. `coverage.limit` always reports the effective row ceiling.
 - Streamed stdout is also capped at 50 MiB. This independent limit covers captures with unusually wide field values even when the packet count is below the row ceiling.
 - `top_k` limits returned groups only. This keeps the statistical result complete while controlling response size.
 - Group keys are tshark field text. Key sorting is lexical except for the numeric time-bucket prefix.

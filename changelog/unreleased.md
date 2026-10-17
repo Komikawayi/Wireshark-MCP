@@ -21,6 +21,10 @@
   query shapes, protocol branches and resumable multi-capture evidence.
 - Harness-trace-bound evaluation with input/result integrity checks, observed
   anchors and 20 scenarios; source/discovery/wheel checks now cover both skills.
+- Configurable aggregate scan policy: `WIRESHARK_MCP_AGGREGATE_SCAN_LIMIT`
+  (default 1,000,000 rows, clamped to 1,000–10,000,000) and
+  `WIRESHARK_MCP_AGGREGATE_TIMEOUT` (default 30 s, clamped to 5–600 s) tune
+  `wireshark_aggregate`; coverage reports the effective row limit.
 
 - `wireshark_analyze_protocol` gains five Bluetooth Low Energy protocol values
   (the tool surface stays at 52): `ble_devices` (advertising device inventory:
@@ -87,6 +91,9 @@
 - MCP Skill 补充可回答性检查、诊断决策、已验证调用模板、专项协议与跨文件交接。
 - 评测扩展至 20 个场景，关联独立执行记录、输入/结果摘要与实际锚点；分发及 wheel
   门禁覆盖两个 Skill，不将格式检查或合成测试冒充模型效果提升。
+- 可配置聚合扫描策略：`WIRESHARK_MCP_AGGREGATE_SCAN_LIMIT`（默认 1,000,000 行，
+  限定在 1,000–10,000,000）与 `WIRESHARK_MCP_AGGREGATE_TIMEOUT`（默认 30 秒，限定在
+  5–600 秒）调整 `wireshark_aggregate`；coverage 报告实际生效的行数上限。
 
 - `wireshark_analyze_protocol` 新增五个蓝牙低功耗（BLE）协议值（工具面保持
   52 个）：`ble_devices`（广播设备清单：帧数、设备名、厂商 company ID、TxAdd
