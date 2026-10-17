@@ -32,20 +32,22 @@ Exit criterion: results are reproducible, scan boundaries and limitations are ex
 - [x] Local Codex/Claude Code plugin bundles and repository marketplace wiring, sharing canonical skills and locked uv launchers.
 - [ ] Publish the repository/plugin release, remote transport-specific installers and clean multi-platform client sign-off.
 
-## Next — 3.1 deep analysis, memory bounds, and CLI skill release
+## 3.1 release — deep analysis, memory bounds, and CLI skill release
 
 - [x] **Agent traffic-analysis evaluation baseline**: evaluate Skill behavior with fixed questions, deterministic captures, expected facts, evidence requirements, and forbidden overclaims before optimizing tool count or tokens.
 - [x] **True streaming accumulator:** stream row-by-row into reduction aggregators to eliminate large intermediate string and list allocations.
 - [x] **Numeric reducers:** add `sum`, `min`, `max`, and `avg` over numeric tshark fields (bytes, payload lengths, response times).
 - [x] **CLI Skill implementation and release gates:** full 4.6.9 capability catalog, on-demand guides, bounded execution, Codex discovery and trace-bound evaluation. Public release and comparative Agent effectiveness claims remain separate.
 - [x] **Standalone tshark CLI Skill:** formal release of `tshark-cli-analysis` with automation recipes and shell pipelines.
-- [ ] **MCP vs Native CLI Benchmarks:** the reproducible engine runner and accuracy-gated Agent comparison are implemented; independent multi-run Agent results and large-capture scaling remain to be published.
+- [x] **MCP vs Native CLI Benchmarks:** reproducible engine runner with accuracy-gated 10 MB / 100 MB / 1 GB scaling tiers and published results; the accuracy-gated Agent comparator is ready, and independent multi-run Agent results move to 3.2.
 - [x] **Configurable scan policies:** server-side configurable packet ceilings and timeout budgets.
 
 Exit criterion: numeric aggregation and pagination have real-tshark tests, deterministic output, bounded memory, and examples in both aggregation guides.
 
-## Later — 3.2 evidence-first findings
+## Next — 3.2 evidence-first findings
 
+- Publish the full 20-scenario × 3-path × 3-run Agent evaluation matrix with harness-bound traces.
+- Persist investigation case files (inputs, executed queries, findings, analyst verdicts) so long investigations survive context resets.
 - Define one finding schema shared by security and anomaly tools: severity, confidence, evidence frames, filters, streams, and caveats.
 - Produce Markdown and JSON reports from the same finding data rather than maintaining two independent renderers.
 - Add timeline helpers that preserve exact frame numbers and relative times for incident-response workflows.
