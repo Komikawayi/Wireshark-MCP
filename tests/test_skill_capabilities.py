@@ -242,24 +242,28 @@ def _shell_blocks(document: Path) -> list[str]:
     return re.findall(r"```sh\n(.*?)```", document.read_text(encoding="utf-8"), flags=re.S)
 
 
-def _bash_available() -> bool:
-    # On Windows runners `bash` can resolve to the WSL launcher with no distribution installed.
+def _working_bash() -> str | None:
+    # Resolve bash explicitly: on Windows a bare "bash" hits the System32 WSL launcher first,
+    # which fails when no distribution is installed.
     bash = shutil.which("bash")
     if bash is None:
-        return False
+        return None
     try:
         probe = subprocess.run([bash, "-c", "true"], capture_output=True, timeout=10)
     except (OSError, subprocess.TimeoutExpired):
-        return False
-    return probe.returncode == 0
+        return None
+    return bash if probe.returncode == 0 else None
 
 
-@pytest.mark.skipif(not _bash_available(), reason="requires a working bash")
+BASH = _working_bash()
+
+
+@pytest.mark.skipif(BASH is None, reason="requires a working bash")
 def test_automation_guide_shell_examples_parse_and_disable_name_resolution() -> None:
     blocks = _shell_blocks(AUTOMATION)
     assert len(blocks) >= 8
     for block in blocks:
-        checked = subprocess.run(["bash", "-n"], input=block, capture_output=True, text=True, timeout=10)
+        checked = subprocess.run([BASH, "-n"], input=block, capture_output=True, text=True, timeout=10)
         assert checked.returncode == 0, (block, checked.stderr)
         for line in block.splitlines():
             if re.match(r"\s*tshark ", line):
