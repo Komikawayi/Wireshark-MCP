@@ -83,6 +83,7 @@ class AggregateClient(MockTSharkClient):
         self.aggregate_fields: list[str] = []
         self.aggregate_filter = ""
         self.aggregate_limit = 0
+        self.aggregate_timeout = 0
         self.aggregate_stream_limit = False
 
     async def stream_fields(
@@ -97,6 +98,7 @@ class AggregateClient(MockTSharkClient):
         self.aggregate_fields = fields
         self.aggregate_filter = display_filter
         self.aggregate_limit = max_rows
+        self.aggregate_timeout = timeout
         self.aggregate_stream_limit = True
         if self.stream_result is not None:
             return self.stream_result
@@ -405,6 +407,56 @@ class TestAggregate:
         assert result["error"]["type"] == "LimitExceeded"
         assert result["coverage"] == {"status": "partial", "scanned": 1_000_000, "limit": 1_000_000}
         assert client.aggregate_limit == 1_000_000
+        assert client.aggregate_timeout == 30
+
+    @pytest.mark.asyncio
+    async def test_scan_policy_is_configurable_from_the_environment(self, monkeypatch) -> None:
+        monkeypatch.setenv("WIRESHARK_MCP_AGGREGATE_SCAN_LIMIT", "250000")
+        monkeypatch.setenv("WIRESHARK_MCP_AGGREGATE_TIMEOUT", "120")
+        client = AggregateClient(
+            "frame.number\n",
+            {
+                "success": False,
+                "rows": 250_000,
+                "bytes_read": 1_000,
+                "error": {"type": "LimitExceeded", "message": "Matching packet rows exceed the 250000 row limit"},
+            },
+        )
+
+        result = await _call_aggregate(client)
+
+        assert client.aggregate_limit == 250_000
+        assert client.aggregate_timeout == 120
+        assert result["coverage"] == {"status": "partial", "scanned": 250_000, "limit": 250_000}
+
+
+class TestAggregateScanPolicy:
+    def test_defaults_without_environment(self, monkeypatch) -> None:
+        from wireshark_mcp.tools.stats import resolve_aggregate_scan_policy
+
+        monkeypatch.delenv("WIRESHARK_MCP_AGGREGATE_SCAN_LIMIT", raising=False)
+        monkeypatch.delenv("WIRESHARK_MCP_AGGREGATE_TIMEOUT", raising=False)
+
+        assert resolve_aggregate_scan_policy() == (1_000_000, 30)
+
+    @pytest.mark.parametrize(
+        ("limit", "timeout", "expected"),
+        [
+            ("1", "1", (1_000, 5)),
+            ("999999999", "86400", (10_000_000, 600)),
+            ("lots", "soon", (1_000_000, 30)),
+            ("  ", "", (1_000_000, 30)),
+        ],
+    )
+    def test_out_of_range_or_invalid_values_stay_inside_safe_bounds(
+        self, monkeypatch, limit: str, timeout: str, expected: tuple[int, int]
+    ) -> None:
+        from wireshark_mcp.tools.stats import resolve_aggregate_scan_policy
+
+        monkeypatch.setenv("WIRESHARK_MCP_AGGREGATE_SCAN_LIMIT", limit)
+        monkeypatch.setenv("WIRESHARK_MCP_AGGREGATE_TIMEOUT", timeout)
+
+        assert resolve_aggregate_scan_policy() == expected
 
 
 class TestIoGraphFilterConsolidation:

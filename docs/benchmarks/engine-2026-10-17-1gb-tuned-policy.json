@@ -1,0 +1,583 @@
+{
+  "schema_version": 2,
+  "benchmark": "analysis-path-engine-baseline",
+  "scope": "Execution primitives only; this does not measure Agent accuracy, evidence quality, or tokens.",
+  "environment": {
+    "platform": "Linux-6.18.44-fc-v139-x86_64-with-glibc2.39",
+    "python": "3.13.16",
+    "tshark": "TShark (Wireshark) 4.2.2 (Git v4.2.2 packaged as 4.2.2-1.1build3).",
+    "scan_policy_env": {
+      "WIRESHARK_MCP_AGGREGATE_SCAN_LIMIT": "2000000",
+      "WIRESHARK_MCP_AGGREGATE_TIMEOUT": "600"
+    }
+  },
+  "summary": {
+    "mcp": {
+      "scenarios": 5,
+      "scenarios_passed": 5,
+      "error_rate": 0.0,
+      "mean_setup_ms": 753.63,
+      "mean_elapsed_ms": 154.962,
+      "p50_elapsed_ms": 155.003,
+      "p95_elapsed_ms": 166.046,
+      "max_combined_peak_rss_bytes": 225619968,
+      "process_calls": 5,
+      "token_cost": null
+    },
+    "tshark-cli": {
+      "scenarios": 5,
+      "scenarios_passed": 5,
+      "error_rate": 0.0,
+      "mean_setup_ms": 0.001,
+      "mean_elapsed_ms": 147.644,
+      "p50_elapsed_ms": 148.333,
+      "p95_elapsed_ms": 159.045,
+      "max_combined_peak_rss_bytes": 176705536,
+      "process_calls": 5,
+      "token_cost": null
+    }
+  },
+  "scaling": {
+    "1000MB": {
+      "capture_bytes": 1000000318,
+      "packets": 1561889,
+      "seed": 3101,
+      "summary": {
+        "mcp": {
+          "scenarios": 5,
+          "scenarios_passed": 5,
+          "error_rate": 0.0,
+          "mean_setup_ms": 764.055,
+          "mean_elapsed_ms": 50126.739,
+          "p50_elapsed_ms": 50918.543,
+          "p95_elapsed_ms": 53122.435,
+          "max_combined_peak_rss_bytes": 1558679552,
+          "process_calls": 5,
+          "token_cost": null
+        },
+        "tshark-cli": {
+          "scenarios": 5,
+          "scenarios_passed": 5,
+          "error_rate": 0.0,
+          "mean_setup_ms": 0.0,
+          "mean_elapsed_ms": 48815.282,
+          "p50_elapsed_ms": 49872.177,
+          "p95_elapsed_ms": 52636.9,
+          "max_combined_peak_rss_bytes": 2016604160,
+          "process_calls": 5,
+          "token_cost": null
+        }
+      }
+    }
+  },
+  "records": [
+    {
+      "scenario_id": "packet_count",
+      "variant": "mcp",
+      "tier": "fixture",
+      "iterations": 1,
+      "warmup_iterations": 0,
+      "setup_ms": 918.90267,
+      "passed": true,
+      "expected": {
+        "packet_count": 3
+      },
+      "facts": {
+        "packet_count": 3
+      },
+      "errors": [],
+      "elapsed_ms": [
+        165.497628
+      ],
+      "peak_rss_bytes": {
+        "worker": 73572352,
+        "tshark": 152047616,
+        "combined_estimate": 225619968
+      },
+      "process_calls": 1
+    },
+    {
+      "scenario_id": "primary_source",
+      "variant": "mcp",
+      "tier": "fixture",
+      "iterations": 1,
+      "warmup_iterations": 0,
+      "setup_ms": 685.870527,
+      "passed": true,
+      "expected": {
+        "primary_source": "192.168.1.10",
+        "primary_source_packets": 3
+      },
+      "facts": {
+        "primary_source": "192.168.1.10",
+        "primary_source_packets": 3
+      },
+      "errors": [],
+      "elapsed_ms": [
+        144.57881
+      ],
+      "peak_rss_bytes": {
+        "worker": 73633792,
+        "tshark": 151961600,
+        "combined_estimate": 225595392
+      },
+      "process_calls": 1
+    },
+    {
+      "scenario_id": "dns_query_count",
+      "variant": "mcp",
+      "tier": "fixture",
+      "iterations": 1,
+      "warmup_iterations": 0,
+      "setup_ms": 794.837145,
+      "passed": true,
+      "expected": {
+        "dns_query_count": 27
+      },
+      "facts": {
+        "dns_query_count": 27
+      },
+      "errors": [],
+      "elapsed_ms": [
+        166.046376
+      ],
+      "peak_rss_bytes": {
+        "worker": 73641984,
+        "tshark": 151687168,
+        "combined_estimate": 225329152
+      },
+      "process_calls": 1
+    },
+    {
+      "scenario_id": "literal_user_agent",
+      "variant": "mcp",
+      "tier": "fixture",
+      "iterations": 1,
+      "warmup_iterations": 0,
+      "setup_ms": 672.71107,
+      "passed": true,
+      "expected": {
+        "distinct_http_user_agents": 1
+      },
+      "facts": {
+        "distinct_http_user_agents": 1
+      },
+      "errors": [],
+      "elapsed_ms": [
+        143.685172
+      ],
+      "peak_rss_bytes": {
+        "worker": 73633792,
+        "tshark": 151560192,
+        "combined_estimate": 225193984
+      },
+      "process_calls": 1
+    },
+    {
+      "scenario_id": "numeric_frame_bytes",
+      "variant": "mcp",
+      "tier": "fixture",
+      "iterations": 1,
+      "warmup_iterations": 0,
+      "setup_ms": 695.827039,
+      "passed": true,
+      "expected": {
+        "frame_bytes": 304.0
+      },
+      "facts": {
+        "frame_bytes": 304.0
+      },
+      "errors": [],
+      "elapsed_ms": [
+        155.00349
+      ],
+      "peak_rss_bytes": {
+        "worker": 73687040,
+        "tshark": 151859200,
+        "combined_estimate": 225546240
+      },
+      "process_calls": 1
+    },
+    {
+      "scenario_id": "packet_count",
+      "variant": "tshark-cli",
+      "tier": "fixture",
+      "iterations": 1,
+      "warmup_iterations": 0,
+      "setup_ms": 0.0003,
+      "passed": true,
+      "expected": {
+        "packet_count": 3
+      },
+      "facts": {
+        "packet_count": 3
+      },
+      "errors": [],
+      "elapsed_ms": [
+        148.332563
+      ],
+      "peak_rss_bytes": {
+        "worker": 24629248,
+        "tshark": 151638016,
+        "combined_estimate": 176267264
+      },
+      "process_calls": 1
+    },
+    {
+      "scenario_id": "primary_source",
+      "variant": "tshark-cli",
+      "tier": "fixture",
+      "iterations": 1,
+      "warmup_iterations": 0,
+      "setup_ms": 0.001043,
+      "passed": true,
+      "expected": {
+        "primary_source": "192.168.1.10",
+        "primary_source_packets": 3
+      },
+      "facts": {
+        "primary_source": "192.168.1.10",
+        "primary_source_packets": 3
+      },
+      "errors": [],
+      "elapsed_ms": [
+        135.401852
+      ],
+      "peak_rss_bytes": {
+        "worker": 24612864,
+        "tshark": 151719936,
+        "combined_estimate": 176332800
+      },
+      "process_calls": 1
+    },
+    {
+      "scenario_id": "dns_query_count",
+      "variant": "tshark-cli",
+      "tier": "fixture",
+      "iterations": 1,
+      "warmup_iterations": 0,
+      "setup_ms": 0.000828,
+      "passed": true,
+      "expected": {
+        "dns_query_count": 27
+      },
+      "facts": {
+        "dns_query_count": 27
+      },
+      "errors": [],
+      "elapsed_ms": [
+        159.045283
+      ],
+      "peak_rss_bytes": {
+        "worker": 24616960,
+        "tshark": 152088576,
+        "combined_estimate": 176705536
+      },
+      "process_calls": 1
+    },
+    {
+      "scenario_id": "literal_user_agent",
+      "variant": "tshark-cli",
+      "tier": "fixture",
+      "iterations": 1,
+      "warmup_iterations": 0,
+      "setup_ms": 0.000371,
+      "passed": true,
+      "expected": {
+        "distinct_http_user_agents": 1
+      },
+      "facts": {
+        "distinct_http_user_agents": 1
+      },
+      "errors": [],
+      "elapsed_ms": [
+        148.742856
+      ],
+      "peak_rss_bytes": {
+        "worker": 24674304,
+        "tshark": 151863296,
+        "combined_estimate": 176537600
+      },
+      "process_calls": 1
+    },
+    {
+      "scenario_id": "numeric_frame_bytes",
+      "variant": "tshark-cli",
+      "tier": "fixture",
+      "iterations": 1,
+      "warmup_iterations": 0,
+      "setup_ms": 0.000363,
+      "passed": true,
+      "expected": {
+        "frame_bytes": 304.0
+      },
+      "facts": {
+        "frame_bytes": 304.0
+      },
+      "errors": [],
+      "elapsed_ms": [
+        146.697204
+      ],
+      "peak_rss_bytes": {
+        "worker": 24715264,
+        "tshark": 151711744,
+        "combined_estimate": 176427008
+      },
+      "process_calls": 1
+    },
+    {
+      "scenario_id": "packet_count",
+      "variant": "mcp",
+      "tier": "1000MB",
+      "iterations": 1,
+      "warmup_iterations": 0,
+      "setup_ms": 730.953001,
+      "passed": true,
+      "expected": {
+        "packet_count": 1561889
+      },
+      "facts": {
+        "packet_count": 1561889
+      },
+      "errors": [],
+      "elapsed_ms": [
+        49332.337076
+      ],
+      "peak_rss_bytes": {
+        "worker": 73744384,
+        "tshark": 1483952128,
+        "combined_estimate": 1557696512
+      },
+      "process_calls": 1
+    },
+    {
+      "scenario_id": "primary_source",
+      "variant": "mcp",
+      "tier": "1000MB",
+      "iterations": 1,
+      "warmup_iterations": 0,
+      "setup_ms": 739.147216,
+      "passed": true,
+      "expected": {
+        "primary_source": "10.255.0.53",
+        "primary_source_packets": 124712
+      },
+      "facts": {
+        "primary_source": "10.255.0.53",
+        "primary_source_packets": 124712
+      },
+      "errors": [],
+      "elapsed_ms": [
+        53122.434504
+      ],
+      "peak_rss_bytes": {
+        "worker": 74903552,
+        "tshark": 1483776000,
+        "combined_estimate": 1558679552
+      },
+      "process_calls": 1
+    },
+    {
+      "scenario_id": "dns_query_count",
+      "variant": "mcp",
+      "tier": "1000MB",
+      "iterations": 1,
+      "warmup_iterations": 0,
+      "setup_ms": 762.364679,
+      "passed": true,
+      "expected": {
+        "dns_query_count": 125069
+      },
+      "facts": {
+        "dns_query_count": 125069
+      },
+      "errors": [],
+      "elapsed_ms": [
+        45588.378099
+      ],
+      "peak_rss_bytes": {
+        "worker": 73629696,
+        "tshark": 1483661312,
+        "combined_estimate": 1557291008
+      },
+      "process_calls": 1
+    },
+    {
+      "scenario_id": "literal_user_agent",
+      "variant": "mcp",
+      "tier": "1000MB",
+      "iterations": 1,
+      "warmup_iterations": 0,
+      "setup_ms": 710.714727,
+      "passed": true,
+      "expected": {
+        "distinct_http_user_agents": 3
+      },
+      "facts": {
+        "distinct_http_user_agents": 3
+      },
+      "errors": [],
+      "elapsed_ms": [
+        50918.542941
+      ],
+      "peak_rss_bytes": {
+        "worker": 73752576,
+        "tshark": 1483538432,
+        "combined_estimate": 1557291008
+      },
+      "process_calls": 1
+    },
+    {
+      "scenario_id": "numeric_frame_bytes",
+      "variant": "mcp",
+      "tier": "1000MB",
+      "iterations": 1,
+      "warmup_iterations": 0,
+      "setup_ms": 877.093426,
+      "passed": true,
+      "expected": {
+        "frame_bytes": 975010070.0
+      },
+      "facts": {
+        "frame_bytes": 975010070.0
+      },
+      "errors": [],
+      "elapsed_ms": [
+        51672.004458
+      ],
+      "peak_rss_bytes": {
+        "worker": 73719808,
+        "tshark": 1483354112,
+        "combined_estimate": 1557073920
+      },
+      "process_calls": 1
+    },
+    {
+      "scenario_id": "packet_count",
+      "variant": "tshark-cli",
+      "tier": "1000MB",
+      "iterations": 1,
+      "warmup_iterations": 0,
+      "setup_ms": 0.000367,
+      "passed": true,
+      "expected": {
+        "packet_count": 1561889
+      },
+      "facts": {
+        "packet_count": 1561889
+      },
+      "errors": [],
+      "elapsed_ms": [
+        49872.176938
+      ],
+      "peak_rss_bytes": {
+        "worker": 402522112,
+        "tshark": 1483702272,
+        "combined_estimate": 1886224384
+      },
+      "process_calls": 1
+    },
+    {
+      "scenario_id": "primary_source",
+      "variant": "tshark-cli",
+      "tier": "1000MB",
+      "iterations": 1,
+      "warmup_iterations": 0,
+      "setup_ms": 0.000429,
+      "passed": true,
+      "expected": {
+        "primary_source": "10.255.0.53",
+        "primary_source_packets": 124712
+      },
+      "facts": {
+        "primary_source": "10.255.0.53",
+        "primary_source_packets": 124712
+      },
+      "errors": [],
+      "elapsed_ms": [
+        51881.63963
+      ],
+      "peak_rss_bytes": {
+        "worker": 532946944,
+        "tshark": 1483657216,
+        "combined_estimate": 2016604160
+      },
+      "process_calls": 1
+    },
+    {
+      "scenario_id": "dns_query_count",
+      "variant": "tshark-cli",
+      "tier": "1000MB",
+      "iterations": 1,
+      "warmup_iterations": 0,
+      "setup_ms": 0.000383,
+      "passed": true,
+      "expected": {
+        "dns_query_count": 125069
+      },
+      "facts": {
+        "dns_query_count": 125069
+      },
+      "errors": [],
+      "elapsed_ms": [
+        44351.92119
+      ],
+      "peak_rss_bytes": {
+        "worker": 55074816,
+        "tshark": 1483546624,
+        "combined_estimate": 1538621440
+      },
+      "process_calls": 1
+    },
+    {
+      "scenario_id": "literal_user_agent",
+      "variant": "tshark-cli",
+      "tier": "1000MB",
+      "iterations": 1,
+      "warmup_iterations": 0,
+      "setup_ms": 0.000414,
+      "passed": true,
+      "expected": {
+        "distinct_http_user_agents": 3
+      },
+      "facts": {
+        "distinct_http_user_agents": 3
+      },
+      "errors": [],
+      "elapsed_ms": [
+        45333.769694
+      ],
+      "peak_rss_bytes": {
+        "worker": 46968832,
+        "tshark": 1483706368,
+        "combined_estimate": 1530675200
+      },
+      "process_calls": 1
+    },
+    {
+      "scenario_id": "numeric_frame_bytes",
+      "variant": "tshark-cli",
+      "tier": "1000MB",
+      "iterations": 1,
+      "warmup_iterations": 0,
+      "setup_ms": 0.000402,
+      "passed": true,
+      "expected": {
+        "frame_bytes": 975010070.0
+      },
+      "facts": {
+        "frame_bytes": 975010070.0
+      },
+      "errors": [],
+      "elapsed_ms": [
+        52636.900309
+      ],
+      "peak_rss_bytes": {
+        "worker": 488734720,
+        "tshark": 1483530240,
+        "combined_estimate": 1972264960
+      },
+      "process_calls": 1
+    }
+  ]
+}

@@ -7,5 +7,6 @@ This compatibility entry replaces the former short prototype recipe list. Select
 - [Statistics and streams](statistics-and-streams.md): whole-scope counts, taps and stream selectors.
 - [Output and export](output-and-export.md): formats, capture writing and derived artifacts.
 - [Operations and evidence](operations-and-evidence.md): bounded execution, status and interpretation.
+- [Automation and pipelines](automation-and-pipelines.md): shell pipelines, scripts, CI gates and batch runs.
 
 All examples are proposed commands until actually executed; use an unused output path, record stderr/exit status, and preserve the original input.

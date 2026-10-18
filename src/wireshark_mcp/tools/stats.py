@@ -1,4 +1,6 @@
+import logging
 import math
+import os
 from collections import defaultdict
 from typing import Any, Literal, TypedDict
 
@@ -18,6 +20,47 @@ MAX_AGGREGATE_FIELDS = 12
 MAX_AGGREGATE_TOP_K = 200
 AGGREGATE_SCAN_LIMIT = 1_000_000
 MIN_TIME_BUCKET_SECONDS = 0.000001
+
+# Operators may tune the aggregate scan policy, but only inside these bounds.
+AGGREGATE_SCAN_LIMIT_ENV = "WIRESHARK_MCP_AGGREGATE_SCAN_LIMIT"
+MIN_AGGREGATE_SCAN_LIMIT = 1_000
+MAX_AGGREGATE_SCAN_LIMIT = 10_000_000
+AGGREGATE_TIMEOUT_ENV = "WIRESHARK_MCP_AGGREGATE_TIMEOUT"
+DEFAULT_AGGREGATE_TIMEOUT = 30
+MIN_AGGREGATE_TIMEOUT = 5
+MAX_AGGREGATE_TIMEOUT = 600
+
+logger = logging.getLogger("wireshark_mcp")
+
+
+def _resolve_bounded_int(name: str, default: int, minimum: int, maximum: int) -> int:
+    """Read an integer setting from the environment and clamp it to the safe range."""
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        logger.warning("Ignoring non-integer %s=%r", name, raw)
+        return default
+    if value < minimum:
+        logger.warning("Clamping %s=%r to minimum %d", name, raw, minimum)
+        return minimum
+    if value > maximum:
+        logger.warning("Clamping %s=%r to maximum %d", name, raw, maximum)
+        return maximum
+    return value
+
+
+def resolve_aggregate_scan_policy() -> tuple[int, int]:
+    """Return the configured (row limit, timeout seconds) for wireshark_aggregate."""
+    scan_limit = _resolve_bounded_int(
+        AGGREGATE_SCAN_LIMIT_ENV, AGGREGATE_SCAN_LIMIT, MIN_AGGREGATE_SCAN_LIMIT, MAX_AGGREGATE_SCAN_LIMIT
+    )
+    timeout = _resolve_bounded_int(
+        AGGREGATE_TIMEOUT_ENV, DEFAULT_AGGREGATE_TIMEOUT, MIN_AGGREGATE_TIMEOUT, MAX_AGGREGATE_TIMEOUT
+    )
+    return scan_limit, timeout
 
 
 def _field_list(value: str) -> list[str]:
@@ -255,6 +298,7 @@ def _maybe_summarize(raw_result: str, max_rows: int = 50) -> str:
 
 
 def register_stats_tools(mcp: MCPServer, client: TSharkClient) -> None:
+    scan_limit, scan_timeout = resolve_aggregate_scan_policy()
 
     @mcp.tool()
     async def wireshark_aggregate(
@@ -349,7 +393,8 @@ def register_stats_tools(mcp: MCPServer, client: TSharkClient) -> None:
             extracted_fields,
             accumulator.add,
             display_filter,
-            max_rows=AGGREGATE_SCAN_LIMIT,
+            max_rows=scan_limit,
+            timeout=scan_timeout,
         )
         matched_packets = streamed.get("rows", 0)
         if not streamed.get("success", False):
@@ -364,7 +409,7 @@ def register_stats_tools(mcp: MCPServer, client: TSharkClient) -> None:
                 coverage={
                     "status": "partial",
                     "scanned": matched_packets,
-                    "limit": AGGREGATE_SCAN_LIMIT,
+                    "limit": scan_limit,
                 },
             )
         groups, skipped_invalid_time, agg_warnings = accumulator.finish()
@@ -437,7 +482,7 @@ def register_stats_tools(mcp: MCPServer, client: TSharkClient) -> None:
             coverage={
                 "status": "complete" if not agg_warnings else "partial",
                 "scanned": matched_packets,
-                "limit": AGGREGATE_SCAN_LIMIT,
+                "limit": scan_limit,
             },
             stderr=streamed.get("stderr"),
         )
