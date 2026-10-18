@@ -369,7 +369,7 @@ def test_real_batch_and_pipefail_pipeline(tmp_path: Path) -> None:
     batch = json.loads((destination / "batch.json").read_text(encoding="utf-8"))
     assert batch["counts"]["inputs"] == 1 and batch["counts"]["complete"] == 1
     assert len(Path(batch["runs"][0]["stdout"]).read_bytes().splitlines()) == 27
-    if shutil.which("bash") is None:
+    if BASH is None:
         return
     # The guide's first pipeline: per-name counts must add up to the full query count.
     pipeline = (
@@ -377,6 +377,6 @@ def test_real_batch_and_pipefail_pipeline(tmp_path: Path) -> None:
         "| LC_ALL=C sort | uniq -c | LC_ALL=C sort -rn"
     )
     result = subprocess.run(
-        ["bash", "-c", pipeline, "pipeline", str(capture)], capture_output=True, text=True, check=True, timeout=15
+        [BASH, "-c", pipeline, "pipeline", str(capture)], capture_output=True, text=True, check=True, timeout=15
     )
     assert sum(int(line.split()[0]) for line in result.stdout.splitlines()) == 27
